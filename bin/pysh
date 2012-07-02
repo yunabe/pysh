@@ -1,0 +1,16 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+import os
+import sys
+
+dir = os.path.dirname(os.path.realpath(__file__))
+root = os.path.join(dir, '..')
+path = os.environ.get('PYTHONPATH', '')
+if path:
+  path += ':'
+os.environ['PYTHONPATH'] = path + root
+os.execlp('python',
+          'python',
+          os.path.join(dir, '../pysh/main.py'),
+          *sys.argv[1:])

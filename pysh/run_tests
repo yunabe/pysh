@@ -1,0 +1,22 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+import os
+import sys
+
+tests = ['pysh_test.py',
+         ]
+
+dir = os.path.dirname(os.path.realpath(__file__))
+root = os.path.join(dir, '..')
+path = os.environ.get('PYTHONPATH', '')
+if path:
+  path += ':'
+os.environ['PYTHONPATH'] = path + root
+print os.environ['PYTHONPATH']
+
+for test in tests:
+    os.execlp('python',
+              'python',
+              os.path.join(dir,
+                           os.path.join('../pysh', test)))
