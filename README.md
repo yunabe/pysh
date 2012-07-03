@@ -53,8 +53,19 @@ Redirection is also supported in pysh.
     > echo foo || echo bar
 
 ## String literal
+The format of string literal in pysh is equivalent with
+string literal in Python
+(In other words, it's different from other shells.)
+You can use escape characters like \n, \t.
+If you are familiar with Python, you don't need to learn another
+string literal format.
 
     > echo "a\nb"
+
+In pysh, variables ($i) and python expression (${…}) in string literals
+are evaluated if string literal is double-quoted.
+If string literal is single-quoted, pysh does not evaluate $i, ${…} in literals.
+    
     > echo "$i"
     > echo '$i'
 
