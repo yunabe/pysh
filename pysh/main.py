@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import StringIO
 
 SHELL_PREFIX = re.compile(r'^([ \t\f\v]*)>[ \t\f\v]*')
 
@@ -9,20 +10,173 @@ SIGNATURE = ('# -*- coding: utf-8 -*-\n'
              '# Don\'t edit this by hand.\n')
 
 
-# Needs to support here document and line concat with backslash.
-def convert(r, w):
-  for line in r.readlines():
-    m = SHELL_PREFIX.match(line)
-    if not m:
-      w.write(line)
+class RoughLexer(object):
+  def __init__(self, reader):
+    self.reader = reader
+    self.c = None
+
+  def is_space(self, c):
+    return c == ' ' or c == '\t' or c == '\f' or c == '\v'
+
+  def read(self):
+    self.c = self.reader.read(1)
+    return self.c
+
+  def seek_string_literal(self, mode, content):
+    first = self.c
+    self.read()
+    if self.c == first:
+      if self.read() != first:
+        # empty literal
+        content.write(first * 2)
+      else:
+        content.write(first * 3)
+        self.read()
+        self.seek_here_document(mode, content, first)
     else:
-      indent = m.group(1)
-      body = line[len(m.group(0)):]
-      w.write(indent)
-      w.write('pysh.pysh.run(%s, locals(), globals())' % `body.rstrip()`)
-      w.write('\n')
+      content.write(first)
+      self.seek_simple_string_literal(mode, content, first)
+
+  def seek_here_document(self, mode, content, quote):
+    count = 0
+    while True:
+      cur = self.c
+      self.read()
+      if cur == '':
+        raise Exception('EOF while scanning here document')
+      elif cur == quote:
+        content.write(cur)
+        count += 1
+        if count == 3:
+          break
+      elif cur == '\\':
+        if mode == 'shell':
+          raise Exception('Backslash continuation is not '
+                          'allowed in shell mode.')
+        self.seek_backslash(content)
+      else:
+        content.write(cur)
+        count = 0
+
+  def seek_simple_string_literal(self, mode, content, quote):
+    while True:
+      cur = self.c
+      self.read()
+      if cur == '':
+        raise Exception('EOF while scanning string literal')
+      elif cur == '\r' or cur == '\n':
+        raise Exception('EOL while scanning string literal')
+      elif cur == '\\':
+        if self.c == '\r' or self.c == '\n':
+          if mode == 'shell':
+            raise Exception('Backslash continuation is not '
+                            'allowed in shell mode.')
+          self.seek_backslash(content)
+        else:
+          content.write('\\' + self.c)
+          self.read()
+      else:
+        content.write(cur)
+        if cur == quote:
+          break
+
+  def seek_backslash(self, writer):
+    if self.c == '\n':
+      self.read()
+    elif self.c == '\r':
+      if self.read() == '\n':
+        self.read()
+    else:
+      writer.write('\\')
+
+  def next(self):
+    if self.c is None:
+      self.c = self.reader.read(1)
+
+    indent = StringIO.StringIO()
+    while self.is_space(self.c):
+      indent.write(self.c)
+      self.read()
+
+    mode = 'python'
+    if self.c == '>':
+      mode = 'shell'
+      while self.is_space(self.read()):
+        pass
+      
+    content = StringIO.StringIO()
+    while True:
+      if self.c == '':
+        break
+      elif self.c == '\'' or self.c == '"':
+        self.seek_string_literal(mode, content)
+      elif self.c == '#':
+        while self.read() != '\n':
+          pass
+        self.read() # discard '\n'
+        break
+      elif self.c == '\r':
+        if self.read() == '\n':
+          self.read() # discard '\n'
+        break
+      elif self.c == '\n':
+        self.read() # discard '\n'
+        break
+      elif self.c == '\\' and mode == 'python':
+        self.read()
+        self.seek_backslash(content)
+      else:
+        content.write(self.c)
+        self.read()
+    content_value = content.getvalue()
+    if self.c == '' and not content_value:
+      return None, None, None
+    else:
+      return indent.getvalue(), mode, content_value
 
 
+class Converter(object):
+  def __init__(self, reader, writer):
+    self.lexer = RoughLexer(reader)
+    self.writer = writer
+
+  def __output_shell(self, indent, content):
+    self.writer.write(indent)
+    self.writer.write('pysh.pysh.run(%s, locals(), globals())' % `content`)
+    self.writer.write('\n')
+
+  def convert(self):
+    use_existing = False
+    while True:
+      if not use_existing:
+        indent, mode, content = self.lexer.next()
+      else:
+        use_existing = False
+        
+      if indent is None:
+        break
+
+      if mode == 'python':
+        self.writer.write(indent)
+        self.writer.write(content)
+        self.writer.write('\n')
+        continue
+
+      shell_indent = indent
+      shell_content = ''
+      while True:
+        if shell_indent != indent or mode != 'shell':
+          use_existing = True
+          break
+        if not content.endswith('\\'):
+          shell_content += content
+          break
+        
+        shell_content += content[:-1]
+        indent, mode, content = self.lexer.next()
+      self.__output_shell(shell_indent, shell_content)
+
+          
 def main():
   if len(sys.argv) < 2:
     print >> sys.stderr, 'Usage: pysh script.pysh'
@@ -38,7 +192,8 @@ def main():
   w = file(py, 'w')
   w.write(SIGNATURE)
   w.write('import pysh.pysh\n')
-  convert(r, w)
+  converter = Converter(r, w)
+  converter.convert()
   w.close()
   os.execlp('python', 'python', py, *argv)
 
