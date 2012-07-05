@@ -22,7 +22,7 @@ class RoughLexer(object):
     self.c = self.reader.read(1)
     return self.c
 
-  def seek_string_literal(self, mode, content):
+  def seek_string_literal(self, content):
     first = self.c
     self.read()
     if self.c == first:
@@ -32,12 +32,12 @@ class RoughLexer(object):
       else:
         content.write(first * 3)
         self.read()
-        self.seek_here_document(mode, content, first)
+        self.seek_here_document(content, first)
     else:
       content.write(first)
-      self.seek_simple_string_literal(mode, content, first)
+      self.seek_simple_string_literal(content, first)
 
-  def seek_here_document(self, mode, content, quote):
+  def seek_here_document(self, content, quote):
     count = 0
     while True:
       cur = self.c
@@ -51,9 +51,6 @@ class RoughLexer(object):
           break
       elif cur == '\\':
         if self.c == '\r' or self.c == '\n':
-          if mode == 'shell':
-            raise Exception('Backslash continuation is not '
-                            'allowed in shell mode.')
           self.seek_backslash(content)
         else:
           content.write('\\' + self.c)
@@ -62,7 +59,7 @@ class RoughLexer(object):
         content.write(cur)
         count = 0
 
-  def seek_simple_string_literal(self, mode, content, quote):
+  def seek_simple_string_literal(self, content, quote):
     while True:
       cur = self.c
       self.read()
@@ -72,9 +69,6 @@ class RoughLexer(object):
         raise Exception('EOL while scanning string literal')
       elif cur == '\\':
         if self.c == '\r' or self.c == '\n':
-          if mode == 'shell':
-            raise Exception('Backslash continuation is not '
-                            'allowed in shell mode.')
           self.seek_backslash(content)
         else:
           content.write('\\' + self.c)
@@ -113,7 +107,7 @@ class RoughLexer(object):
       if self.c == '':
         break
       elif self.c == '\'' or self.c == '"':
-        self.seek_string_literal(mode, content)
+        self.seek_string_literal(content)
       elif self.c == '#':
         while self.c != '\n' and self.c != '':
           self.read()
