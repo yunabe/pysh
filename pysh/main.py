@@ -50,10 +50,14 @@ class RoughLexer(object):
         if count == 3:
           break
       elif cur == '\\':
-        if mode == 'shell':
-          raise Exception('Backslash continuation is not '
-                          'allowed in shell mode.')
-        self.seek_backslash(content)
+        if self.c == '\r' or self.c == '\n':
+          if mode == 'shell':
+            raise Exception('Backslash continuation is not '
+                            'allowed in shell mode.')
+          self.seek_backslash(content)
+        else:
+          content.write('\\' + self.c)
+          self.read()
       else:
         content.write(cur)
         count = 0
@@ -111,8 +115,8 @@ class RoughLexer(object):
       elif self.c == '\'' or self.c == '"':
         self.seek_string_literal(mode, content)
       elif self.c == '#':
-        while self.read() != '\n':
-          pass
+        while self.c != '\n' and self.c != '':
+          self.read()
         self.read() # discard '\n'
         break
       elif self.c == '\r':
