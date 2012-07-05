@@ -10,6 +10,18 @@ class RoughLexerTest(unittest.TestCase):
     self.assertEquals(('', 'python', 'print 3 + 4'), lexer.next())
     self.assertEquals((None, None, None), lexer.next())
 
+  def testSimplePython(self):
+    reader = StringIO.StringIO('print 3 + 4\\\n + 5')
+    lexer = main.RoughLexer(reader)
+    self.assertEquals(('', 'python', 'print 3 + 4 + 5'), lexer.next())
+    self.assertEquals((None, None, None), lexer.next())
+
+  def testSimpleShell(self):
+    reader = StringIO.StringIO('> echo foo\\\n bar')
+    lexer = main.RoughLexer(reader)
+    self.assertEquals(('', 'shell', 'echo foo bar'), lexer.next())
+    self.assertEquals((None, None, None), lexer.next())
+
   def testString(self):
     reader = StringIO.StringIO('print "apple"\nprint \'banana\'')
     lexer = main.RoughLexer(reader)

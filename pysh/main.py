@@ -126,7 +126,7 @@ class RoughLexer(object):
       elif self.c == '\n':
         self.read() # discard '\n'
         break
-      elif self.c == '\\' and mode == 'python':
+      elif self.c == '\\':
         self.read()
         self.seek_backslash(content)
       else:
@@ -144,11 +144,6 @@ class Converter(object):
     self.lexer = RoughLexer(reader)
     self.writer = writer
 
-  def __output_shell(self, indent, content):
-    self.writer.write(indent)
-    self.writer.write('pysh.pysh.run(%s, locals(), globals())' % `content`)
-    self.writer.write('\n')
-
   def convert(self):
     use_existing = False
     while True:
@@ -160,25 +155,12 @@ class Converter(object):
       if indent is None:
         break
 
+      self.writer.write(indent)
       if mode == 'python':
-        self.writer.write(indent)
         self.writer.write(content)
-        self.writer.write('\n')
-        continue
-
-      shell_indent = indent
-      shell_content = ''
-      while True:
-        if shell_indent != indent or mode != 'shell':
-          use_existing = True
-          break
-        if not content.endswith('\\'):
-          shell_content += content
-          break
-        
-        shell_content += content[:-1]
-        indent, mode, content = self.lexer.next()
-      self.__output_shell(shell_indent, shell_content)
+      else:
+        self.writer.write('pysh.pysh.run(%s, locals(), globals())' % `content`)
+      self.writer.write('\n')
 
           
 def main():
