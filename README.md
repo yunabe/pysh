@@ -22,16 +22,16 @@ In pysh, you can use python variable from shell scripts.
 
     x = 3
     y = x * x
-    > echo $i
-    > echo $PATH
+    > echo $y     # 9
+    > echo $PATH  # os.environment['PATH']
 
 ## Python expression
 In pysh, you can use any python expression by ${…}.
 
-    > echo ${3 + 4}
+    > echo ${3 + 4}  # 7
     def f(x):
         return x * x
-    > echo ${f(10)}
+    > echo ${f(10)}  # 100
     > echo ${lambda x: x}
 
 ## Pipe
@@ -68,6 +68,13 @@ If string literal is single-quoted, pysh does not evaluate $i, ${…} in literal
     
     > echo "$i"
     > echo '$i'
+    
+## Multiline
+Like other shell script, you can continue lines
+with backslash at the end of line.
+
+    > echo foo\
+        bar
 
 ## Backquote
 Not yet supported
