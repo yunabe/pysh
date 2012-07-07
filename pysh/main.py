@@ -139,6 +139,7 @@ class Converter(object):
     self.writer = writer
 
   def convert(self):
+    self.writer.write('import pysh.pysh\n')
     use_existing = False
     while True:
       if not use_existing:
@@ -156,26 +157,43 @@ class Converter(object):
         self.writer.write('pysh.pysh.run(%s, locals(), globals())' % `content`)
       self.writer.write('\n')
 
-          
+
+def usage_exit():
+  print >> sys.stderr, 'Usage: pysh [-c cmd | file | -]'
+  sys.exit(1)
+
+
 def main():
   if len(sys.argv) < 2:
-    print >> sys.stderr, 'Usage: pysh script.pysh'
-    sys.exit(1)
-  script = sys.argv[1]
-  argv = sys.argv[2:]
-  name, ext = os.path.splitext(script)
-  if ext == ".py":
-    print >> sys.stderr, 'An input file shoundn\'t be *.py.'
-    sys.exit(1)
-  py = name + '.py'
-  r = file(script, 'r')
-  w = file(py, 'w')
-  w.write(SIGNATURE)
-  w.write('import pysh.pysh\n')
-  converter = Converter(r, w)
-  converter.convert()
-  w.close()
-  os.execlp('python', 'python', py, *argv)
+    usage_exit()
+  if sys.argv[1] == '-':
+    reader = sys.stdin
+    writer = StringIO.StringIO()
+    Converter(reader, writer).convert()
+    argv = sys.argv[2:]
+    os.execlp('python', 'python', '-c', writer.getvalue(), *argv)
+  elif sys.argv[1] == '-c':
+    if len(sys.argv) < 3:
+      usage_exit()
+    reader = StringIO.StringIO(sys.argv[2])
+    writer = StringIO.StringIO()
+    Converter(reader, writer).convert()
+    argv = sys.argv[3:]
+    os.execlp('python', 'python', '-c', writer.getvalue(), *argv)
+  else:
+    script = sys.argv[1]
+    name, ext = os.path.splitext(script)
+    if ext == ".py":
+      print >> sys.stderr, 'An input file shoundn\'t be *.py.'
+      sys.exit(1)
+    py = name + '.py'
+    reader = file(script, 'r')
+    writer = file(py, 'w')
+    writer.write(SIGNATURE)
+    Converter(reader, writer).convert()
+    writer.close()
+    argv = sys.argv[2:]
+    os.execlp('python', 'python', py, *argv)
 
 
 if __name__ == '__main__':
