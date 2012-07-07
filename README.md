@@ -15,7 +15,7 @@ command execution, pipe, redirection,
     if not name:
         name = 'world'
     > echo "Hello $name!"
-
+    
 # Features
 ## Variable
 In pysh, you can use python variable from shell scripts.
@@ -68,7 +68,31 @@ If string literal is single-quoted, pysh does not evaluate $i, ${…} in literal
     
     > echo "$i"
     > echo '$i'
-    
+
+## map, reduce, filter
+map, reduce and filter builtin commands are available in pysh.
+These commands read data from pipe and apply "python" function in arg.
+
+### map
+
+    > seq 10 | map ${lambda s: int(s) * int(s)}
+    1
+    4
+    9
+    ...
+
+### filter
+
+    > seq 10 | filter ${lambda s: int(s) % 3 == 0}
+    3
+    6
+    9
+
+### reduce
+
+    > seq 10 | reduce ${lambda x, y: int(x) + int(y)}
+    55
+
 ## Multiline
 Like other shell script, you can continue lines
 with backslash at the end of line.
