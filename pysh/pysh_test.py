@@ -6,6 +6,8 @@ from pysh import SUBSTITUTION
 from pysh import REDIRECT
 from pysh import PIPE
 from pysh import LEFT_ARROW
+from pysh import RIGHT_ARROW
+from pysh import BOLD_RIGHT_ARROW
 from pysh import LITERAL
 from pysh import AND_OP
 from pysh import OR_OP
@@ -241,6 +243,50 @@ class TokenizerTest(unittest.TestCase):
     self.assertEquals([(LITERAL, 'x'),
                        (LEFT_ARROW, '<-'),
                        (LITERAL, 'echo'),
+                       (EOF, '')], list(tok))
+
+  def testRightArrow(self):
+    tok = pysh.Tokenizer('echo->x')
+    self.assertEquals([(LITERAL, 'echo'),
+                       (RIGHT_ARROW, '->'),
+                       (LITERAL, 'x'),
+                       (EOF, '')], list(tok))
+    tok = pysh.Tokenizer('echo -> x')
+    self.assertEquals([(LITERAL, 'echo'),
+                       (RIGHT_ARROW, '->'),
+                       (LITERAL, 'x'),
+                       (EOF, '')], list(tok))
+
+  def testBoldRightArrow(self):
+    tok = pysh.Tokenizer('echo=>x')
+    self.assertEquals([(LITERAL, 'echo'),
+                       (BOLD_RIGHT_ARROW, '=>'),
+                       (LITERAL, 'x'),
+                       (EOF, '')], list(tok))
+    tok = pysh.Tokenizer('echo => x')
+    self.assertEquals([(LITERAL, 'echo'),
+                       (BOLD_RIGHT_ARROW, '=>'),
+                       (LITERAL, 'x'),
+                       (EOF, '')], list(tok))
+
+  def testHyphenEqualInLiteral(self):
+    tok = pysh.Tokenizer('echo x- -- -')
+    self.assertEquals([(LITERAL, 'echo'),
+                       (SPACE, ' '),
+                       (LITERAL, 'x-'),
+                       (SPACE, ' '),
+                       (LITERAL, '--'),
+                       (SPACE, ' '),
+                       (LITERAL, '-'),
+                       (EOF, '')], list(tok))
+    tok = pysh.Tokenizer('echo x= == =')
+    self.assertEquals([(LITERAL, 'echo'),
+                       (SPACE, ' '),
+                       (LITERAL, 'x='),
+                       (SPACE, ' '),
+                       (LITERAL, '=='),
+                       (SPACE, ' '),
+                       (LITERAL, '='),
                        (EOF, '')], list(tok))
 
   def testSemicolon(self):

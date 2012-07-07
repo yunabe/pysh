@@ -17,6 +17,8 @@ SUBSTITUTION = 'substitution'
 REDIRECT = 'redirect'
 PIPE = 'pipe'
 LEFT_ARROW = 'left_arrow'
+RIGHT_ARROW = 'right_arrow'
+BOLD_RIGHT_ARROW = 'bright_arrow'
 LITERAL = 'literal'
 AND_OP = 'andop'
 OR_OP = 'orop'
@@ -33,7 +35,9 @@ REDIRECT_PATTERN = re.compile(r'(\d*)>(>)?(?:&(\d+))?')
 SPACE_PATTERN = re.compile(r'[ \t]+')
 VARIABLE_PATTERN = re.compile(r'\$[_a-zA-Z][_a-zA-Z0-9]*')
 PIPE_PATTERN = re.compile(r'\|')
-LEFT_ARROW_PATTERN = re.compile(r'<-')
+LEFT_ARROW_PATTERN = re.compile(r'<\-')
+RIGHT_ARROW_PATTERN = re.compile(r'\->')
+BOLD_RIGHT_ARROW_PATTERN = re.compile(r'\=>')
 SINGLE_DOLLAR_PATTERN = re.compile(r'\$')
 AND_OPERATOR_PATTERN = re.compile(r'&&')
 PARENTHESIS_START_PATTERN = re.compile(r'\(')
@@ -41,6 +45,9 @@ PARENTHESIS_END_PATTERN = re.compile(r'\)')
 OR_OPERATOR_PATTERN = re.compile(r'\|\|')
 SEMICOLON_PATTERN = re.compile(r';')
 BACKQUOTE_PATTERN = re.compile(r'`')
+LITERAL_PATTERN = re.compile(r'([0-9A-Za-z\!\#\%\*\+\,\.\/\:'
+                             r'\?\@\[\\\]\^\_\{\}\~]'
+                             r'|\-(?!>)|\=(?!>))+')
 
 PYTHON_VARIABLE_PATTERN = re.compile(r'[_a-zA-Z][_a-zA-Z0-9]*')
 
@@ -114,6 +121,8 @@ class Tokenizer(object):
       RegexMather(OR_OPERATOR_PATTERN, OR_OP),
       RegexMather(PIPE_PATTERN, PIPE),
       RegexMather(LEFT_ARROW_PATTERN, LEFT_ARROW),
+      RegexMather(RIGHT_ARROW_PATTERN, RIGHT_ARROW),
+      RegexMather(BOLD_RIGHT_ARROW_PATTERN, BOLD_RIGHT_ARROW),
       RegexMather(PARENTHESIS_START_PATTERN, PARENTHESIS_START),
       RegexMather(PARENTHESIS_END_PATTERN, PARENTHESIS_END),
       RegexMather(SEMICOLON_PATTERN, SEMICOLON),
@@ -123,43 +132,11 @@ class Tokenizer(object):
       ExprMatcher(),
       RegexMather(SINGLE_DOLLAR_PATTERN, LITERAL),
       RegexMather(SPACE_PATTERN, SPACE),
+      RegexMather(LITERAL_PATTERN, LITERAL),
       ]
 
   def __iter__(self):
     return self
-
-  def find_char(self, s, cond):
-    for i, c in enumerate(s):
-      if cond(c):
-        return i
-    return -1
-
-  def is_special(self, c):
-    if ord(c) <= ord(' '):  # whitespace
-      return True
-    if c == '$':
-      return True
-    if c == '>':
-      return True
-    if c == '<':
-      return True
-    if c == '|':
-      return True
-    if c == '&':
-      return True
-    if c == '(':
-      return True
-    if c == ')':
-      return True
-    if c == ';':
-      return True
-    if c == '\'':
-      return True
-    if c == '"':
-      return True
-    if c == '`':
-      return True
-    return False
 
   def next(self):
     if not self.cur:
@@ -253,14 +230,7 @@ class Tokenizer(object):
         else:
           return token, string
 
-    pos = self.find_char(input, self.is_special)
-    assert pos != 0
-    if pos == -1:
-      self.__input = ''
-      return LITERAL, input
-    else:
-      self.__input = input[pos:]
-      return LITERAL, input[:pos]
+    raise Exception('Failed to tokenize: ' + self.__input[:100]))
 
 
 class Process(object):
