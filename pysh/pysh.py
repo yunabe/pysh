@@ -230,7 +230,7 @@ class Tokenizer(object):
         else:
           return token, string
 
-    raise Exception('Failed to tokenize: ' + self.__input[:100]))
+    raise Exception('Failed to tokenize: ' + self.__input[:100])
 
 
 class Process(object):
@@ -309,16 +309,23 @@ class Parser(object):
         return left
 
   def parsePiped(self):
-    left = None
+    left = self.parseCmd()
     while True:
-      cmd = self.parseCmd()
-      left = ('|', left, cmd) if left else cmd
       tok, _ = self.__tokenizer.cur
-      if tok != PIPE:
-        return left
-      else:
+      if tok == PIPE:
         self.__tokenizer.next()
- 
+        cmd = self.parseCmd()
+        left = ('|', left, cmd)
+      elif tok == RIGHT_ARROW:
+        self.__tokenizer.next()
+        tok, string = self.__tokenizer.cur
+        if tok != LITERAL or not PYTHON_VARIABLE_PATTERN.match(string):
+          raise Exception('-> must be followed with python var.')
+        self.__tokenizer.next()
+        left = ('->', left, string)
+      else:
+        return left
+
   def parseCmd(self):
     tok, _ = self.__tokenizer.cur
     if tok == PARENTHESIS_START:
@@ -352,6 +359,13 @@ class Parser(object):
         else:
           target = self.parseArg()
           redirects.append((append, src_num, target))
+      elif tok == BOLD_RIGHT_ARROW:
+        self.__tokenizer.next()
+        tok, string = self.__tokenizer.cur
+        if tok != LITERAL or not PYTHON_VARIABLE_PATTERN.match(string):
+          raise Exception('=> must be followed with python var.')
+        redirects.append(('=>', string))
+        self.__tokenizer.next()
       else:
         break
     return Process(args, redirects)
@@ -713,6 +727,8 @@ class Evaluator(object):
         args.extend(self.evalArg(arg, globals, locals))
       redirects = []
       for redirect in proc.redirects:
+        if redirect[0] == '=>':
+          raise Exception('Not supported.')
         if isinstance(redirect[2], int):
           redirects.append(redirect)
         else:

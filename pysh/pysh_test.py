@@ -567,6 +567,18 @@ class EvalTest(unittest.TestCase):
     self.assertEquals('<-', ast[0])
     self.assertEquals('rc', ast[1])
 
+  def testRightArrow(self):
+    ast = self.getAst('echo foo -> rc')
+    self.assertEquals(3, len(ast))
+    self.assertEquals('->', ast[0])
+    self.assertTrue(isinstance(ast[1], pysh.Process))
+    self.assertEquals('rc', ast[2])
+
+  def testBoldRightArrow(self):
+    ast = self.getAst('echo foo => out')
+    self.assertEquals(1, len(ast.redirects))
+    self.assertEquals(('=>', 'out'), ast.redirects[0])
+
 
 class RunTest(unittest.TestCase):
   def setUp(self):
