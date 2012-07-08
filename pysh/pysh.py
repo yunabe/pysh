@@ -16,7 +16,6 @@ DOUBLE_QUOTED_STRING = 'double_quoted'
 SUBSTITUTION = 'substitution'
 REDIRECT = 'redirect'
 PIPE = 'pipe'
-LEFT_ARROW = 'left_arrow'
 RIGHT_ARROW = 'right_arrow'
 BOLD_RIGHT_ARROW = 'bright_arrow'
 LITERAL = 'literal'
@@ -35,7 +34,6 @@ REDIRECT_PATTERN = re.compile(r'(\d*)>(>)?(?:&(\d+))?')
 SPACE_PATTERN = re.compile(r'[ \t]+')
 VARIABLE_PATTERN = re.compile(r'\$[_a-zA-Z][_a-zA-Z0-9]*')
 PIPE_PATTERN = re.compile(r'\|')
-LEFT_ARROW_PATTERN = re.compile(r'<\-')
 RIGHT_ARROW_PATTERN = re.compile(r'\->')
 BOLD_RIGHT_ARROW_PATTERN = re.compile(r'\=>')
 SINGLE_DOLLAR_PATTERN = re.compile(r'\$')
@@ -120,7 +118,6 @@ class Tokenizer(object):
       # should precede PIPE_PATTERN
       RegexMather(OR_OPERATOR_PATTERN, OR_OP),
       RegexMather(PIPE_PATTERN, PIPE),
-      RegexMather(LEFT_ARROW_PATTERN, LEFT_ARROW),
       RegexMather(RIGHT_ARROW_PATTERN, RIGHT_ARROW),
       RegexMather(BOLD_RIGHT_ARROW_PATTERN, BOLD_RIGHT_ARROW),
       RegexMather(PARENTHESIS_START_PATTERN, PARENTHESIS_START),
@@ -257,7 +254,7 @@ class Parser(object):
   def parseExpr(self):
     left = None
     while True:
-      assign = self.parseAssign()
+      assign = self.parseAndOrTest()
       left = (';', left, assign) if left else assign
       tok, _ = self.__tokenizer.cur
       if tok != SEMICOLON:
@@ -266,28 +263,6 @@ class Parser(object):
       tok, _ = self.__tokenizer.cur
       if tok == EOF or tok == PARENTHESIS_END or tok == BACKQUOTE:
         return left
-
-  def validateLeftForAssign(self, left):
-    if (not isinstance(left, Process) or
-        len(left.args) != 1 or len(left.args[0]) != 1):
-      return None
-    tok, string = left.args[0][0]
-    if tok == LITERAL and PYTHON_VARIABLE_PATTERN.match(string):
-      return string
-    else:
-      return None
-
-  def parseAssign(self):
-    left = self.parseAndOrTest()
-    tok, _ = self.__tokenizer.cur
-    if tok != LEFT_ARROW:
-      return left
-    self.__tokenizer.next()
-    left = self.validateLeftForAssign(left)
-    if not left:
-      raise Exception('Bad left-value format for assign.')
-    right = self.parseAndOrTest()
-    return ('<-', left, right)
 
   def parseAndOrTest(self):
     left = None
