@@ -581,6 +581,9 @@ class Evaluator(object):
       elif op == '<-':
         dependency_stack.append(ast)
         self.evalAst(ast[2], dependency_stack, out)
+      elif op == '->':
+        dependency_stack.append(ast)
+        self.evalAst(ast[1], dependency_stack, out)
       else:
         raise Exception('Unknown operator: %s' % op)
     else:
@@ -683,25 +686,28 @@ class Evaluator(object):
       for runner in pycmd_runners:
         runner.join()
         for dependency in runner.dependencies():
-          new_procs = self.continueFromDependency(runner.ok, dependency)
+          new_procs = self.continueFromDependency(
+            0 if runner.ok else 1, dependency)
           if new_procs:
             procs_queue.append(new_procs)
 
       while len(pids) > 0:
         pid, rc = os.wait()
-        ok = rc == 0
         dependency = pids.pop(pid)
-        new_procs = self.continueFromDependency(ok, dependency)
+        new_procs = self.continueFromDependency(rc, dependency)
         if new_procs:
           procs_queue.append(new_procs)
 
-  def continueFromDependency(self, ok, dependency_stack):
+  def continueFromDependency(self, rc, dependency_stack):
+    ok = rc == 0
     while True:
       if not dependency_stack:
         return None
       op, left, right = dependency_stack.pop()
       if op == '<-':
-        self.storeReturnCode(left, 0 if ok else 1)
+        self.storeReturnCode(left, rc)
+      elif op == '->':
+        self.storeReturnCode(right, rc)
       else:
         if (op == ';' or
             (op == '&&' and ok == True) or

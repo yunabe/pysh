@@ -781,14 +781,28 @@ class RunTest(unittest.TestCase):
     pysh.run('$tmp > out.txt || echo foo >> out.txt', globals(), locals())
     self.assertEquals('foo\n', file('out.txt').read())
 
-  def testReturnCode(self):
+  def testReturnCodeLeft(self):
     rc = pysh.run('rc <- echo foo >> /dev/null', globals(), locals())
     self.assertEquals(1, len(rc))
     self.assertEquals(0, rc['rc'])
 
-  def testReturnCodeMulti(self):
+  def testReturnCodeMultiLeft(self):
     rc = pysh.run('(rc0 <- echo foo >> /dev/null) && '
                   '(rc1 <- echo bar >> /dev/null)', globals(), locals())
+    self.assertEquals(2, len(rc))
+    self.assertEquals(0, rc['rc0'])
+    self.assertEquals(0, rc['rc1'])
+
+  def testReturnCode(self):
+    rc = pysh.run('python -c "import sys;sys.exit(7)" -> rc',
+                  globals(), locals())
+    self.assertEquals(1, len(rc))
+    self.assertEquals(True, os.WIFEXITED(rc['rc']))
+    self.assertEquals(7, os.WEXITSTATUS(rc['rc']))
+
+  def testReturnCodeMulti(self):
+    rc = pysh.run('(echo foo >> /dev/null -> rc0) && '
+                  '(echo bar >> /dev/null -> rc1)', globals(), locals())
     self.assertEquals(2, len(rc))
     self.assertEquals(0, rc['rc0'])
     self.assertEquals(0, rc['rc1'])
