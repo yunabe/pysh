@@ -139,7 +139,7 @@ class Converter(object):
     self.writer = writer
 
   def convert(self):
-    self.writer.write('import pysh.pysh\n')
+    self.writer.write('import pysh.shell.runner\n')
     use_existing = False
     while True:
       if not use_existing:
@@ -154,7 +154,8 @@ class Converter(object):
       if mode == 'python':
         self.writer.write(content)
       else:
-        self.writer.write('pysh.pysh.run(%s, locals(), globals())' % `content`)
+        self.writer.write(
+          'pysh.shell.runner.run(%s, locals(), globals())' % `content`)
       self.writer.write('\n')
 
 

@@ -5,9 +5,13 @@ import os
 import subprocess
 import sys
 
-tests = ['main_test.py',
-         'pysh_test.py',
-         ]
+tests = [
+  'pysh.main_test',
+  'pysh.shell.tokenizer',
+  'pysh.shell.parser_test',
+  'pysh.shell.evaluator_test',
+  'pysh.shell.builtin_test',
+  ]
 
 dir = os.path.dirname(os.path.realpath(__file__))
 root = os.path.join(dir, '..')
@@ -16,14 +20,12 @@ if path:
   path += ':'
 os.environ['PYTHONPATH'] = path + root
 
-print os.environ['PYTHONPATH']
-
 result = {}
 
 for test in tests:
-  result[test] = subprocess.Popen(['python', os.path.join(dir, test)]).wait()
+  result[test] = subprocess.Popen(['python', '-m', test]).wait()
 
-for test in result:
+for test in tests:
   if result[test] == 0:
     print '\033[32;1mSuccess:\033[m %s' % test
   else:
