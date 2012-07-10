@@ -12,5 +12,6 @@ if path:
 os.environ['PYTHONPATH'] = path + root
 os.execlp('python',
           'python',
-          os.path.join(dir, '../pysh/main.py'),
+          '-m'
+          'pysh.main',
           *sys.argv[1:])

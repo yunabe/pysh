@@ -3,6 +3,9 @@ import re
 import sys
 import StringIO
 
+from pysh.shell.tokenizer import Tokenizer
+from pysh.shell.parser import Parser
+
 SHELL_PREFIX = re.compile(r'^([ \t\f\v]*)>[ \t\f\v]*')
 
 SIGNATURE = ('# -*- coding: utf-8 -*-\n'
@@ -138,6 +141,21 @@ class Converter(object):
     self.lexer = RoughLexer(reader)
     self.writer = writer
 
+  def extractResponseNames(self, content):
+    parser = Parser(Tokenizer(content))
+    ast = parser.parse()
+    names = []
+    self.extractResponseNamesInternal(ast, names)
+    return names
+
+  def extractResponseNamesInternal(self, ast, names):
+    if not ast or not isinstance(ast, tuple):
+      return
+    if ast[0] == '->':
+      names.append(ast[2])
+    for e in ast:
+      self.extractResponseNamesInternal(e, names)
+
   def convert(self):
     self.writer.write('import pysh.shell.runner\n')
     use_existing = False
@@ -154,8 +172,12 @@ class Converter(object):
       if mode == 'python':
         self.writer.write(content)
       else:
+        names = self.extractResponseNames(content)
+        if names:
+          self.writer.write(', '.join(names + ['']) + '= ')
         self.writer.write(
-          'pysh.shell.runner.run(%s, locals(), globals())' % `content`)
+          'pysh.shell.runner.run(%s, '
+          'locals(), globals(), %s)' % (`content`, `names`))
       self.writer.write('\n')
 
 
