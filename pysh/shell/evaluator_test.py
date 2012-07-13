@@ -70,6 +70,10 @@ class RunTest(unittest.TestCase):
     run('echo $__name__ > out.txt', globals(), locals())
     self.assertEquals('__main__\n', file('out.txt').read())
 
+  def testFreeVarInLambda(self):
+    k = 10
+    run('echo ${(lambda x: x + k)(3)}', globals(), locals())
+
   def testBuiltinVar(self):
     map_str = str(map)
     run('echo $map > out.txt', globals(), locals())

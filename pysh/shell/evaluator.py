@@ -28,35 +28,12 @@ from pysh.shell.parser import Process
 from pysh.shell.tokenizer import Tokenizer
 
 
-class VarDict(object):
+class VarDict(dict):
+  # VarDict must be a real dict because it is passed to eval as globals.
   def __init__(self, globals, locals):
-    # We need to maintain __temporary because list comprehension need to
-    # modify local variables in Python 2.x.
-    self.__temporary = None
-    self.__globals = globals
-    self.__locals = locals
-
-  def __getitem__(self, key):
-    if self.__temporary and key in self.__temporary:
-      return self.__temporary[key]
-    if key in self.__locals:
-      return self.__locals[key]
-    if key in self.__globals:
-      return self.__globals[key]
-    if key in os.environ:
-      return os.environ[key]
-    if hasattr(__builtins__, key):
-      return getattr(__builtins__, key)
-    raise KeyError(key)
-
-  def __delitem__(self, key):
-    if self.__temporary:
-      del self.__temporary[key]
-
-  def __setitem__(self, key, value):
-    if self.__temporary is None:
-      self.__temporary = {}
-    self.__temporary[key] = value
+    for d in (os.environ, globals, locals):
+      for key in d:
+        self[key] = d[key]
 
 
 __pycmd_map = {}
@@ -167,7 +144,9 @@ class Evaluator(object):
     else:
       # remove $
       name = value[1:]
-    return eval(name, None, VarDict(globals, locals))
+    # We need to pass VarDict as globals because free variable in lambda is
+    # treated as global variable in eval (http://goo.gl/bfVW9).
+    return eval(name, VarDict(globals, locals), {})
 
   def evalArg(self, arg, globals, locals):
     assert arg
