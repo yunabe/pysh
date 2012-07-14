@@ -11,6 +11,8 @@ class PyCmd(object):
   def process(self, args, input):
     for arg in args:
       yield arg
+    if not input:
+      return
     for line in input:
       yield line.rstrip('\n')
 
@@ -216,10 +218,19 @@ class RunTest(unittest.TestCase):
 
   def testReturnCodeMulti(self):
     rc = run('(echo foo >> /dev/null -> rc0) && '
-                  '(echo bar >> /dev/null -> rc1)', globals(), locals())
+             '(echo bar >> /dev/null -> rc1)', globals(), locals())
     self.assertEquals(2, len(rc))
     self.assertEquals(0, rc['rc0'])
     self.assertEquals(0, rc['rc1'])
+
+  def testStoreOutput(self):
+    file('tmp.txt', 'w').write('hello\nworld\n\npiyo')
+    rc = run('cat tmp.txt => out', globals(), locals())
+    self.assertEquals(['hello', 'world', '', 'piyo'], rc['out'])
+
+  def testStoreOutputWithPyCmd(self):
+    rc = run('pycmd a b => out', globals(), locals())
+    self.assertEquals(['pycmd', 'a', 'b'], rc['out'])
 
   def testSemiColon(self):
     rc = run('echo foo >> out.txt; echo bar >> out.txt',

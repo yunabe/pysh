@@ -5,6 +5,7 @@ import StringIO
 
 from pysh.shell.tokenizer import Tokenizer
 from pysh.shell.parser import Parser
+from pysh.shell.parser import Process
 
 SHELL_PREFIX = re.compile(r'^([ \t\f\v]*)>[ \t\f\v]*')
 
@@ -149,7 +150,12 @@ class Converter(object):
     return names
 
   def extractResponseNamesInternal(self, ast, names):
-    if not ast or not isinstance(ast, tuple):
+    if not ast or not (isinstance(ast, tuple) or isinstance(ast, Process)):
+      return
+    if isinstance(ast, Process):
+      for redirect in ast.redirects:
+        if redirect[0] == '=>':
+          names.append(redirect[1])
       return
     if ast[0] == '->':
       names.append(ast[2])

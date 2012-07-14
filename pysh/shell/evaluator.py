@@ -51,11 +51,24 @@ def get_pycmd(name):
   else:
     return None
 
+
+class RecvRunner(threading.Thread):
+  def __init__(self, r, out):
+    self.__r = r
+    self.__out = out
+    threading.Thread.__init__(self)
+
+  def run(self):
+    for line in os.fdopen(self.__r, 'r'):
+      self.__out.append(line.rstrip('\r\n'))
+
+
 # TODO: handle exception in run correctly.
 class PyCmdRunner(threading.Thread):
-  def __init__(self, pycmd_stack, r, w):
+  def __init__(self, rc, pycmd_stack, r, w):
     threading.Thread.__init__(self)
     assert pycmd_stack
+    self.__rc = rc
     self.__pycmd_stack = pycmd_stack
     self.__r = r
     self.__w = w
@@ -86,19 +99,27 @@ class PyCmdRunner(threading.Thread):
           raise Exception('multi-redirect with pycmd is not allowed.')
 
         redirect = redirects[0]
-        if isinstance(redirect[2], int):
+        if redirect[2] == 'num':
           raise Exception('Redirect to another file descriptor is not allowed.')
-        if redirect[0]:
-          mode = 'a'  # >>
+        elif redirect[2] == 'pyout':
+          w = []
+          self.__rc[redirect[3]] = w
         else:
-          mode = 'w'  # >
-        w = file(redirect[2], mode)
+          if redirect[0]:
+            mode = 'a'  # >>
+          else:
+            mode = 'w'  # >
+          w = file(redirect[3], mode)
 
       out = pycmd.process(args, out)
 
-    for data in out:
-      w.write(str(data) + '\n')
-      w.flush()  # can be inefficient.
+    if isinstance(w, list):
+      for data in out:
+        w.append(data)
+    else:
+      for data in out:
+        w.write(str(data) + '\n')
+        w.flush()  # can be inefficient.
     self.ok = True
 
 
@@ -231,7 +252,9 @@ class Evaluator(object):
       procs = procs_queue[0]
       procs_queue = procs_queue[1:]
       pycmd_runners = []
-      self.executeProcs(procs, globals, locals, pids, pycmd_runners)
+      recv_runners = []
+      self.executeProcs(
+        procs, globals, locals, pids, pycmd_runners, recv_runners)
 
       for runner in pycmd_runners:
         runner.join()
@@ -240,6 +263,9 @@ class Evaluator(object):
             0 if runner.ok else 1, dependency)
           if new_procs:
             procs_queue.append(new_procs)
+
+      for runner in recv_runners:
+        runner.join()
 
       while len(pids) > 0:
         pid, rc = os.wait()
@@ -270,7 +296,8 @@ class Evaluator(object):
   def storeReturnCode(self, name, rc):
     self.__rc[name] = rc
 
-  def executeProcs(self, procs, globals, locals, pids, pycmd_runners):
+  def executeProcs(self, procs, globals, locals,
+                   pids, pycmd_runners, recv_runners):
     old_r = -1
     pycmd_stack = []
     # We need to store list of write-fd for runners to close them
@@ -284,13 +311,12 @@ class Evaluator(object):
       redirects = []
       for redirect in proc.redirects:
         if redirect[0] == '=>':
-          raise Exception('Not supported.')
-        if isinstance(redirect[2], int):
-          redirects.append(redirect)
+          redirects.append((False, 1, 'pyout', redirect[1]))
+        elif isinstance(redirect[2], int):
+          redirects.append((redirect[0], redirect[1], 'num', redirect[2]))
         else:
           targets = self.evalArg(redirect[2], globals, locals)
-          redirects.append((redirect[0], redirect[1],
-                            str(targets[0])))
+          redirects.append((redirect[0], redirect[1], 'file', str(targets[0])))
 
       pycmd = get_pycmd(args[0])
       if pycmd:
@@ -299,11 +325,24 @@ class Evaluator(object):
 
       if pycmd_stack:
         new_r, w = os.pipe()
-        runner = PyCmdRunner(pycmd_stack, old_r, w)
+        runner = PyCmdRunner(self.__rc, pycmd_stack, old_r, w)
         pycmd_runners.append(runner)
         runner_wfd.append(w)
         old_r = new_r
         pycmd_stack = []
+
+      pyout_rs = []
+      pyout_ws = []
+      for i, redirect in enumerate(redirects):
+        if redirect[2] != 'pyout':
+          continue
+        pyout_list = []
+        self.__rc[redirect[3]] = pyout_list
+        pyout_r, pyout_w = os.pipe()
+        recv_runners.append(RecvRunner(pyout_r, pyout_list))
+        redirects[i] = (redirect[0], redirect[1], redirect[2], pyout_w)
+        pyout_rs.append(pyout_r)
+        pyout_ws.append(pyout_w)
 
       if not is_last:
         new_r, w = os.pipe()
@@ -315,25 +354,31 @@ class Evaluator(object):
           os.close(w)
         if old_r != -1:
           os.close(old_r)
+        for fd in pyout_ws:
+          os.close(fd)
         pids[pid] = dependency
         if not is_last:
           old_r = new_r
       else:
         for fd in runner_wfd:
           os.close(fd)
+        for fd in pyout_rs:
+          os.close(fd)
         if not is_last:
           os.dup2(w, sys.stdout.fileno())
         if old_r != -1:
           os.dup2(old_r, sys.stdin.fileno())
         for redirect in redirects:
-          if isinstance(redirect[2], int):
-            os.dup2(redirect[2], redirect[1])
+          if redirect[2] == 'num':
+            os.dup2(redirect[3], redirect[1])
+          elif redirect[2] == 'pyout':
+            os.dup2(redirect[3], redirect[1])
           else:
             if redirect[0]:
               mode = 'a'  # >>
             else:
               mode = 'w'  # >
-            f = file(redirect[2], mode)
+            f = file(redirect[3], mode)
             os.dup2(f.fileno(), redirect[1])
         str_args = []
         for arg in args:
@@ -347,10 +392,12 @@ class Evaluator(object):
 
     if pycmd_stack:
       # pycmd is the last command.
-      runner = PyCmdRunner(pycmd_stack, old_r, -1)
+      runner = PyCmdRunner(self.__rc, pycmd_stack, old_r, -1)
       pycmd_runners.append(runner)
 
     for runner in pycmd_runners:
+      runner.start()
+    for runner in recv_runners:
       runner.start()
 
 
