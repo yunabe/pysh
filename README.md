@@ -100,5 +100,22 @@ with backslash at the end of line.
     > echo foo\
         bar
 
+## Store return code
+You can store return code of programs with ->.
+
+    > (python -c 'import sys;sys.exit(2)' -> rc0\
+        || python -c 'import sys;sys;exit(0)' -> rc1)
+    > print rc0, rc1  # 512 0
+
+## Redirect to Python
+You can redirect output to Python variable with =>.
+The output is stored to Python variable as list
+(each line is stored as each element of a list).
+
+    > seq 5 | grep -v 3 => out
+    print out  # ['1', '2', '4', '5']
+    > send ${xrange(5)} | filter ${lambda i: i != 3} => out
+    print out  # [0, 1, 2, 4]
+    
 ## Backquote
 Not yet supported
