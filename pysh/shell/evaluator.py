@@ -280,9 +280,7 @@ class Evaluator(object):
       if not dependency_stack:
         return None
       op, left, right = dependency_stack.pop()
-      if op == '<-':
-        self.storeReturnCode(left, rc)
-      elif op == '->':
+      if op == '->':
         self.storeReturnCode(right, rc)
       else:
         if (op == ';' or
