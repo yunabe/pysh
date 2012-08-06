@@ -23,8 +23,10 @@ from pysh.shell.tokenizer import (
 
 )
 
+from pysh.shell.parser import Assign
 from pysh.shell.parser import Parser
 from pysh.shell.parser import Process
+from pysh.shell.parser import BinaryOp
 from pysh.shell.tokenizer import Tokenizer
 
 
@@ -137,22 +139,16 @@ class Evaluator(object):
   def evalAst(self, ast, dependency_stack, out):
     if isinstance(ast, Process):
       out.append((ast, dependency_stack))
-    elif isinstance(ast, tuple) or isinstance(ast, list):
-      if len(ast) != 3:
-        raise Exception('Invalid AST format. Wrong length.')
-      op = ast[0]
-      if op == '&&' or op == '||' or op == ';':
+    elif isinstance(ast, Assign):
+      dependency_stack.append(ast)
+      self.evalAst(ast.cmd, dependency_stack, out) 
+    elif isinstance(ast, BinaryOp):
+      if ast.op == '||' or ast.op == '&&' or ast.op == ';':
         dependency_stack.append(ast)
-        self.evalAst(ast[1], dependency_stack, out)
-      elif op == '|':
-        self.evalAst(ast[1], [], out)
-        self.evalAst(ast[2], dependency_stack, out)
-      elif op == '<-':
-        dependency_stack.append(ast)
-        self.evalAst(ast[2], dependency_stack, out)
-      elif op == '->':
-        dependency_stack.append(ast)
-        self.evalAst(ast[1], dependency_stack, out)
+        self.evalAst(ast.left, dependency_stack, out)
+      elif ast.op == '|':
+        self.evalAst(ast.left, [], out)
+        self.evalAst(ast.right, dependency_stack, out)
       else:
         raise Exception('Unknown operator: %s' % op)
     else:
@@ -279,14 +275,16 @@ class Evaluator(object):
     while True:
       if not dependency_stack:
         return None
-      op, left, right = dependency_stack.pop()
-      if op == '->':
-        self.storeReturnCode(right, rc)
-      else:
-        if (op == ';' or
-            (op == '&&' and ok == True) or
-            (op == '||' and ok == False)):
-          break
+      ast = dependency_stack.pop()
+      if isinstance(ast, Assign):
+        self.storeReturnCode(ast.name, rc)
+        continue
+      assert isinstance(ast, BinaryOp)
+      op, right = ast.op, ast.right
+      if (op == ';' or
+          (op == '&&' and ok == True) or
+          (op == '||' and ok == False)):
+        break
     procs = []
     self.evalAst(right, dependency_stack, procs)
     return procs

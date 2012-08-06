@@ -41,6 +41,17 @@ class Process(object):
   def __repr__(self):
     return str(self)
 
+class BinaryOp(object):
+  def __init__(self, op, left, right):
+    self.op = op
+    self.left = left
+    self.right = right
+
+class Assign(object):
+  def __init__(self, cmd, name):
+    self.cmd = cmd
+    self.name = name
+
 
 class Parser(object):
   def __init__(self, tokenizer):
@@ -55,7 +66,7 @@ class Parser(object):
     left = None
     while True:
       assign = self.parseAndOrTest()
-      left = (';', left, assign) if left else assign
+      left = BinaryOp(';', left, assign) if left else assign
       tok, _ = self.__tokenizer.cur
       if tok != SEMICOLON:
         return left
@@ -70,7 +81,7 @@ class Parser(object):
     while True:
       piped = self.parsePiped()
       if left:
-        left = (op, left, piped)
+        left = BinaryOp(op, left, piped)
       else:
         left = piped
       tok, _ = self.__tokenizer.cur
@@ -90,14 +101,14 @@ class Parser(object):
       if tok == PIPE:
         self.__tokenizer.next()
         cmd = self.parseCmd()
-        left = ('|', left, cmd)
+        left = BinaryOp('|', left, cmd)
       elif tok == RIGHT_ARROW:
         self.__tokenizer.next()
         tok, string = self.__tokenizer.cur
         if tok != LITERAL or not PYTHON_VARIABLE_PATTERN.match(string):
           raise Exception('-> must be followed with python var.')
         self.__tokenizer.next()
-        left = ('->', left, string)
+        left = Assign(left, string)
       else:
         return left
 

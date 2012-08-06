@@ -1,6 +1,7 @@
 import unittest
 
 from pysh.shell.tokenizer import Tokenizer
+from pysh.shell.parser import BinaryOp
 from pysh.shell.parser import Parser
 from pysh.shell.parser import Process
 from pysh.shell.parser import DoubleQuotedStringExpander
@@ -43,22 +44,22 @@ class ParserTest(unittest.TestCase):
     input = 'echo hoge$foo || echo piyo && cat'
     parser = Parser(Tokenizer(input))
     ast = parser.parse()
-    self.assertEquals(3, len(ast))
-    self.assertEquals('&&', ast[0])
-    self.assertEquals(3, len(ast[1]))
-    self.assertEquals('||', ast[1][0])
-    proc0 = ast[1][1]
+    self.assertTrue(isinstance(ast, BinaryOp))
+    self.assertEquals('&&', ast.op)
+    self.assertTrue(isinstance(ast.left, BinaryOp))
+    self.assertEquals('||', ast.left.op)
+    proc0 = ast.left.left
     self.assertTrue(isinstance(proc0, Process))
     self.assertEquals([[('literal', 'echo')],
                        [('literal', 'hoge'), ('substitution', '$foo')]],
                       proc0.args)
     self.assertFalse(proc0.redirects)
-    proc1 = ast[1][2]
+    proc1 = ast.left.right
     self.assertTrue(isinstance(proc1, Process))
     self.assertEquals([[('literal', 'echo')], [('literal', 'piyo')]],
                       proc1.args)
     self.assertFalse(proc1.redirects)
-    proc2 = ast[2]
+    proc2 = ast.right
     self.assertTrue(isinstance(proc2, Process))
     self.assertEquals([[('literal', 'cat')]], proc2.args)
     self.assertFalse(proc2.redirects)
@@ -67,10 +68,10 @@ class ParserTest(unittest.TestCase):
     input = 'echo; cat;'
     parser = Parser(Tokenizer(input))
     ast = parser.parse()
-    self.assertEquals(3, len(ast))
-    self.assertEquals(';', ast[0])
-    self.assertTrue(isinstance(ast[1], Process))
-    self.assertTrue(isinstance(ast[2], Process))
+    self.assertTrue(isinstance(ast, BinaryOp))
+    self.assertEquals(';', ast.op)
+    self.assertTrue(isinstance(ast.left, Process))
+    self.assertTrue(isinstance(ast.right, Process))
 
   def testBackquote(self):
     input = 'echo `echo foo`'
@@ -117,7 +118,7 @@ class ParserTest(unittest.TestCase):
     self.assertEquals(2, len(ast.args))
     self.assertEquals(1, len(ast.args[1]))
     self.assertEquals(BACKQUOTE, ast.args[1][0][0])
-    self.assertEquals('|', ast.args[1][0][1][0])
+    self.assertEquals('|', ast.args[1][0][1].op)
 
 
 if __name__ == '__main__':
