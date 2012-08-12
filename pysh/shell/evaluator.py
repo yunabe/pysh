@@ -1,5 +1,7 @@
+import collections
 import glob
 import os
+import re
 import sys
 import threading
 
@@ -20,7 +22,6 @@ from pysh.shell.tokenizer import (
   SEMICOLON,
   BACKQUOTE,
   EOF,
-
 )
 
 from pysh.shell.parser import Assign
@@ -28,6 +29,98 @@ from pysh.shell.parser import Parser
 from pysh.shell.parser import Process
 from pysh.shell.parser import BinaryOp
 from pysh.shell.tokenizer import Tokenizer
+
+
+PYVAR_PATTERN = re.compile(r'^[_a-zA-Z][_a-zA-Z0-9]*$')
+
+
+class NativeToPy(object):
+  def __init__(self, ast, input, output):
+    self.ast = ast
+    self.input = input
+    self.output = output
+
+
+def GetArg0Name(tok, vardict):
+  if tok[0] == LITERAL or tok[0] == SINGLE_QUOTED_STRING:
+    return tok[1]
+  if tok[0] != SUBSTITUTION:
+    return None
+  value = tok[1]
+  if value.startswith('${'):
+    value = value[2:-1]
+  else:
+    value = value[1:]
+  if not PYVAR_PATTERN.match(value):
+    return None
+  value = vardict.get(value, None)
+  if isinstance(value, str):
+    return value
+  if (isinstance(value, tuple) or isinstance(value, list)) and (
+    isinstance(value[0], str)):
+    return value[0]
+  # value can be pycmd itself.
+  return value
+
+
+def IsPyCmd(proc, vardict):
+  arg0 = proc.args[0]
+  if len(arg0) != 1:
+    return False
+  name = GetArg0Name(arg0[0], vardict)
+  pycmd = get_pycmd(name)
+  return not not pycmd
+
+
+def DiagnoseIOType(ast, vardict):
+  DiagnoseIOTypeInternal(ast, vardict)
+  if ast.inType == 'ST' and ast.outType == 'ST':
+    # should be tested in evaluator_test.py
+    return ast
+  else:
+    return NativeToPy(ast, ast.inType == 'PY', ast.outType == 'PY')
+
+
+# Maybe, we don't need outType.
+def DiagnoseIOTypeInternal(ast, vardict):
+  if isinstance(ast, Process):
+    is_pycmd = IsPyCmd(ast, vardict)
+    if is_pycmd:
+      ast.inType = 'PY'
+      ast.outType = 'PY'
+    else:
+      ast.inType = 'ST'
+      ast.outType = 'ST'
+  elif isinstance(ast, Assign):
+    DiagnoseIOTypeInternal(ast.cmd, vardict)
+    ast.inType = ast.cmd.inType
+    ast.outType = ast.cmd.outType
+  else:
+    assert isinstance(ast, BinaryOp)
+    DiagnoseIOTypeInternal(ast.left, vardict)
+    DiagnoseIOTypeInternal(ast.right, vardict)
+    if ast.op == '|':
+      ast.inType = ast.left.inType
+      ast.outType = ast.right.outType
+      if ast.left.outType != ast.right.inType:
+        if ast.left.outType == 'PY':
+          ast.left = NativeToPy(ast.left, False, True)
+          ast.left.inType = ast.inType
+          ast.left.outType = 'ST'
+        else:
+          ast.right = NativeToPy(ast.right, True, False)
+          ast.right.inType = 'ST'
+          ast.right.outType = ast.outType
+    else:
+      if ast.left.inType != ast.right.inType:
+        raise Exception('Can not combile cmd that reads python object and '
+                        'cmd that reads file stream.')
+      ast.inType = ast.left.inType
+      if ast.left.outType == ast.right.outType:
+        ast.outType = ast.left.outType
+      else:
+        ast.outType = 'MIX'
+        raise Exception('Not supported.')
 
 
 class VarDict(dict):
@@ -54,105 +147,399 @@ def get_pycmd(name):
     return None
 
 
-class RecvRunner(threading.Thread):
-  def __init__(self, r, out):
-    self.__r = r
-    self.__out = out
+class PipeFd(object):
+  def __init__(self, parent, stdin, stdout):
+    self.stdin = None
+    self.stdout = None
+    if parent:
+      self.stdin = parent.stdin
+      self.stdout = parent.stdout
+    if stdin is not None:
+      self.stdin = stdin
+    if stdout is not None:
+      self.stdout = stdout
+
+
+class PyPipe(object):
+  def __init__(self):
+    self.__generators = collections.deque()
+    self.__close = False
+    self.__cond = threading.Condition()
+
+  def add_generator(self, generator):
+    self.__cond.acquire()
+    self.__generators.append(generator)
+    self.__cond.notify()
+    self.__cond.release()
+
+  def close(self):
+    self.__cond.acquire()
+    self.__close = True
+    self.__cond.notify()
+    self.__cond.release()
+
+  def __iter__(self):
+    while True:
+      self.__cond.acquire()
+      while not (self.__close or self.__generators):
+        self.__cond.wait()
+      if self.__generators:
+        generator = self.__generators.pop()
+      else:
+        generator = None
+      self.__cond.release()
+
+      if generator:
+        for e in generator:
+          yield e
+      else:
+        assert self.__close
+        break
+
+
+class TaskArg(object):
+  def __init__(self, rc, pool, pids, wait_thread, callbacks,
+               write_done, cond, globals, locals):
+    self.rc = rc
+    self.pool = pool
+    self.pids = []
+    self.callbacks = callbacks
+    self.wait_thread = wait_thread
+    self.all_r = set()
+    self.all_w = set()
+    self.files = {}
+    self.write_done = write_done
+    self.condition = cond
+    self.globals = globals
+    self.locals = locals
+
+  def ospipe(self):
+    rw = os.pipe()
+    self.all_r.add(rw[0])
+    self.all_w.add(rw[1])
+    return rw
+
+  def filew(self, path, mode):
+    assert mode == 'a' or mode == 'w'
+    f = file(path, mode)
+    self.files[f.fileno()] = f
+    return f
+
+  def tofile(self, fd):
+    if fd == sys.stdin.fileno():
+      return sys.stdin
+    if fd == sys.stdout.fileno():
+      return sys.stdout
+    if fd in self.all_r:
+      mode = 'r'
+    elif fd in self.all_w:
+      mode = 'w'
+    else:
+      raise Exception('Unknown file descriptor: ' + str(fd))
+    f = os.fdopen(fd, mode)
+    self.files[fd] = f
+    return f
+
+  def close(self, fd):
+    if fd in self.files:
+      # We need to close file explicitly. Why?
+      self.files[fd].close()
+      del self.files[fd]
+    else:
+      os.close(fd)
+
+class EvalAstTask(object):
+  def __init__(self, arg, pipefd, ast):
+    self.__arg = arg
+    self.__pipefd = pipefd
+    self.__ast = ast
+
+  def start(self, cont):
+    ast = self.__ast
+    if isinstance(ast, Process):
+      cont.call(EvalProcessTask(self.__arg, self.__pipefd, ast), 'wait')
+    elif isinstance(ast, BinaryOp):
+      op = ast.op
+      if op == '&&' or op == '||' or op == ';':
+        cont.call(
+          SemiAndOrTask(self.__arg, self.__pipefd, op, ast.left, ast.right),
+          'wait')
+      elif op == '|':
+        self.invokePipeTask(cont, ast.left, ast.right)
+      else:
+        raise Exception('Unknown op:', op)
+    elif isinstance(ast, Assign):
+      cont.call(AssignTask(
+          self.__arg, self.__pipefd, ast.cmd, ast.name), 'wait')
+    elif isinstance(ast, NativeToPy):
+      cont.call(NativeToPyTask(self.__arg, self.__pipefd, ast), 'wait')
+    else:
+      raise Exception('Unexpected ast')
+
+  def invokePipeTask(self, cont, left, right):
+    assert left.outType == right.inType
+    if left.outType == 'PY':
+      cont.call(PipePyToPyTask(self.__arg, self.__pipefd, left, right), 'wait')
+    else:
+      cont.call(PipeNativeToNativeTask(self.__arg, self.__pipefd, left, right),
+                'wait')
+
+  def resume(self, cont, state, response):
+    assert state == 'wait'
+    cont.done(response)
+
+
+class WriteThread(threading.Thread):
+  def __init__(self, input, output):
     threading.Thread.__init__(self)
+    self.__input = input
+    self.__output = output
 
   def run(self):
-    for line in os.fdopen(self.__r, 'r'):
-      self.__out.append(line.rstrip('\r\n'))
+    for e in self.__input:
+      self.__output.write(str(e))
+      self.__output.write('\n')
 
 
-# TODO: handle exception in run correctly.
-class PyCmdRunner(threading.Thread):
-  def __init__(self, rc, pycmd_stack, r, w):
+class WritePyCmdRedirectThread(threading.Thread):
+  def __init__(self, input, out):
     threading.Thread.__init__(self)
-    assert pycmd_stack
-    self.__rc = rc
-    self.__pycmd_stack = pycmd_stack
+    self.__input = input
+    self.__file = out
+
+  def run(self):
+    for e in self.__input:
+      self.__file.write(str(e))
+      self.__file.write('\n')
+
+
+class WritePyCmdRedirectPyOutThread(threading.Thread):
+  def __init__(self, input, output):
+    threading.Thread.__init__(self)
+    self.__input = input
+    self.__output = output
+
+  def run(self):
+    for e in self.__input:
+      self.__output.append(e)
+
+
+class WriteToPyOutThread(threading.Thread):
+  def __init__(self, input, output):
+    threading.Thread.__init__(self)
+    self.__input = input
+    self.__output = output
+
+  def run(self):
+    for line in self.__input:
+      self.__output.append(line.rstrip('\r\n'))
+
+
+class WaitChildThread(threading.Thread):
+  def __init__(self, pids, pids_cond):
+    threading.Thread.__init__(self)
+    self.__pids = pids
+    self.__pids_cond = pids_cond
+    self.__child_count = 0
+    self.__child_count_cond = threading.Condition()
+    self.__stop = False
+
+  def increuemnt(self):
+    self.__child_count_cond.acquire()
+    self.__child_count += 1
+    if self.__child_count == 1:
+      self.__child_count_cond.notify()
+    self.__child_count_cond.release()
+
+  def stop(self):
+    self.__child_count_cond.acquire()
+    self.__stop = True
+    self.__child_count_cond.notify()
+    self.__child_count_cond.release()
+
+  def run(self):
+    while True:
+      self.__child_count_cond.acquire()
+      while self.__child_count == 0 and not self.__stop:
+        self.__child_count_cond.wait()
+
+      if self.__child_count > 0:
+        self.__child_count -= 1
+        done = False
+      else:
+        assert(self.__stop)
+        done = True
+
+      self.__child_count_cond.release()
+
+      if done:
+        break
+      pid, rc = os.wait()
+      self.__pids_cond.acquire()
+      self.__pids.append((pid, rc))
+      if len(self.__pids) == 1:
+        self.__pids_cond.notify()
+      self.__pids_cond.release()
+
+
+class NativeToPyTask(object):
+  def __init__(self, arg, pipefd, ast):
+    self.__arg = arg
+    self.__pipefd = pipefd
+    self.__ast = ast
+    self.__new_w = None
+    self.__write_th = None
+
+  def start(self, cont):
+    new_r = None
+    new_w = None
+    if self.__ast.input:
+      new_r = self.__arg.tofile(self.__pipefd.stdin)
+    if self.__ast.output:
+      new_w = PyPipe()
+      self.__write_th = WriteThread(new_w,
+                                    self.__arg.tofile(self.__pipefd.stdout))
+      self.__write_th.start()
+      self.__new_w = new_w
+    cont.call(EvalAstTask(
+        self.__arg,
+        PipeFd(self.__pipefd, new_r, new_w),
+        self.__ast.ast), 'wait')
+
+  def resume(self, cont, state, response):
+    if self.__new_w:
+      self.__new_w.close()
+      self.__write_th.join()
+    cont.done(response)
+
+
+class SemiAndOrTask(object):
+  def __init__(self, arg, pipefd, op, left, right):
+    self.__arg = arg
+    self.__pipefd = pipefd
+    self.__op = op
+    self.__left = left
+    self.__right = right
+
+  def start(self, cont):
+    cont.call(EvalAstTask(self.__arg, self.__pipefd, self.__left), 'left')
+
+  def resume(self, cont, state, response):
+    if state == 'left':
+      ok = response == 0
+      if (ok and self.__op == '||') or (not ok and self.__op == '&&'):
+        cont.done(response)
+        return
+      cont.call(EvalAstTask(self.__arg, self.__pipefd, self.__right), 'right')
+    else:
+      assert state == 'right'
+      cont.done(response)
+
+class PipePyToPyTask(object):
+  def __init__(self, arg, pipefd, left, right):
+    self.__arg = arg
+    self.__pipefd = pipefd
+    self.__left = left
+    self.__right = right
+
+  def start(self, cont):
+    self.__pypipe = PyPipe()
+    cont.call(EvalAstTask(self.__arg,
+                          PipeFd(self.__pipefd, None, self.__pypipe),
+                          self.__left),
+              'left')
+    cont.call(EvalAstTask(self.__arg,
+                          PipeFd(self.__pipefd, self.__pypipe, None),
+                          self.__right),
+              'right')
+
+  def resume(self, cont, state, response):
+    if state == 'left':
+      self.__pypipe.close()
+    else:
+      assert state == 'right'
+      # it's okay?
+      cont.done(response)
+
+
+class PipeNativeToNativeTask(object):
+  def __init__(self, arg, pipefd, left, right):
+    self.__arg = arg
+    self.__pipefd = pipefd
+    self.__left = left
+    self.__right = right
+
+  def start(self, cont):
+    r, w = self.__arg.ospipe()
     self.__r = r
     self.__w = w
-    self.ok = False
+    cont.call(EvalAstTask(self.__arg, PipeFd(self.__pipefd, None, self.__w),
+                          self.__left), 'left')
+    cont.call(EvalAstTask(self.__arg, PipeFd(self.__pipefd, self.__r, None),
+                          self.__right), 'right')
 
-  def dependencies(self):
-    result = []
-    for _, _, _, dependency in self.__pycmd_stack:
-      result.append(dependency)
-    return result
-
-  def run(self):
-    # Creates w first to close self.__w for sure.
-    if self.__w != -1:
-      w = os.fdopen(self.__w, 'w')
+  def resume(self, cont, state, response):
+    if state == 'left':
+      self.__arg.close(self.__w)
     else:
-      w = sys.stdout
-    if self.__r == -1:
-      out = None
-    else:
-      out = os.fdopen(self.__r, 'r')
-    for i, (pycmd, args, redirects, _) in enumerate(self.__pycmd_stack):
-      if redirects:
-        if w is not sys.stdout or i != len(self.__pycmd_stack) - 1:
-          raise Exception('redirect with pycmd is allowed '
-                          'only when it is the last.')
-        if len(redirects) != 1:
-          raise Exception('multi-redirect with pycmd is not allowed.')
-
-        redirect = redirects[0]
-        if redirect[2] == 'num':
-          raise Exception('Redirect to another file descriptor is not allowed.')
-        elif redirect[2] == 'pyout':
-          w = []
-          self.__rc[redirect[3]] = w
-        else:
-          if redirect[0]:
-            mode = 'a'  # >>
-          else:
-            mode = 'w'  # >
-          w = file(redirect[3], mode)
-
-      out = pycmd.process(args, out)
-
-    if isinstance(w, list):
-      for data in out:
-        w.append(data)
-    else:
-      for data in out:
-        w.write(str(data) + '\n')
-        w.flush()  # can be inefficient.
-    self.ok = True
+      assert state == 'right'
+      self.__arg.close(self.__r)
+      # it's okay?
+      cont.done(response)
 
 
-class Evaluator(object):
-  def __init__(self, parser):
-    self.__parser = parser
-    self.__rc = {}
+class AssignTask(object):
+  def __init__(self, arg, pipefd, ast, var):
+    self.__arg = arg
+    self.__pipefd = pipefd
+    self.__ast = ast
+    self.__var = var
 
-  def __after_folk(self, pid):
-    pass
+  def start(self, cont):
+    cont.call(EvalAstTask(self.__arg, self.__pipefd, self.__ast), 'wait')
 
-  def rc(self):
-    return self.__rc
+  def resume(self, cont, state, response):
+    assert state == 'wait'
+    self.__arg.rc[self.__var] = response
+    cont.done(response)
 
-  def evalAst(self, ast, dependency_stack, out):
-    if isinstance(ast, Process):
-      out.append((ast, dependency_stack))
-    elif isinstance(ast, Assign):
-      dependency_stack.append(ast)
-      self.evalAst(ast.cmd, dependency_stack, out) 
-    elif isinstance(ast, BinaryOp):
-      if ast.op == '||' or ast.op == '&&' or ast.op == ';':
-        dependency_stack.append(ast)
-        self.evalAst(ast.left, dependency_stack, out)
-      elif ast.op == '|':
-        self.evalAst(ast.left, [], out)
-        self.evalAst(ast.right, dependency_stack, out)
-      else:
-        raise Exception('Unknown operator: %s' % op)
-    else:
-      raise Exception('Invalid AST format.')
+
+class EvalProcessTask(object):
+  def __init__(self, arg, pipefd, proc):
+    self.__arg = arg
+    self.__pipefd = pipefd
+    self.__proc = proc
+
+    self.__pycmd_redirect_out = None
+    self.__pycmd_redirect_th = None
+
+    self.__pyout_rs = set()
+    self.__pyout_thread = []
+
+  def resume(self, cont, state, response):
+    assert state == 'pycmd_done' or state == 'cmd_done'
+    if self.__pycmd_redirect_th:
+      self.__pycmd_redirect_th.join()
+    if self.__pycmd_redirect_out:
+      self.__arg.close(self.__pycmd_redirect_out.fileno())
+    for th in self.__pyout_thread:
+      th.join()
+    for r in self.__pyout_rs:
+      self.__arg.close(r)
+    cont.done(response)
+
+  def processPyCmd(self, cont, pycmd, args, stdin):
+    try:
+      for e in pycmd.process(args, stdin):
+        yield e
+      rc = 0
+    except Exception, e:
+      print >> sys.stderr, e
+      rc = 1
+    self.__arg.condition.acquire()
+    self.__arg.write_done.append((cont, 'pycmd_done', rc))
+    self.__arg.condition.notify()
+    self.__arg.condition.release()
 
   def evalSubstitution(self, value, globals, locals):
     if value.startswith('${'):
@@ -163,7 +550,8 @@ class Evaluator(object):
       name = value[1:]
     # We need to pass VarDict as globals because free variable in lambda is
     # treated as global variable in eval (http://goo.gl/bfVW9).
-    return eval(name, VarDict(globals, locals), {})
+    return eval(name,
+                VarDict(self.__arg.globals, self.__arg.locals), {})
 
   def evalArg(self, arg, globals, locals):
     assert arg
@@ -233,168 +621,158 @@ class Evaluator(object):
           return True
     return False
 
+  def start(self, cont):
+    proc = self.__proc
+    args = []
+    for arg in proc.args:
+      args.extend(self.evalArg(arg, globals, locals))
+    redirects = []
+    for redirect in proc.redirects:
+      if redirect[0] == '=>':
+        redirects.append((False, 1, 'pyout', redirect[1]))
+      elif isinstance(redirect[2], int):
+        redirects.append((redirect[0], redirect[1], 'num', redirect[2]))
+      else:
+        targets = self.evalArg(redirect[2], globals, locals)
+        redirects.append((redirect[0], redirect[1], 'file', str(targets[0])))
+
+    pycmd = get_pycmd(args[0])
+    if pycmd:
+      assert len(redirects) < 2
+      if redirects:
+        redirect = redirects[0]
+        assert not redirect[2] == 'num'
+        if redirect[2] == 'file':
+          assert redirect[1] == 1  # stdout
+          if redirect[0]:
+            mode = 'a'  # >>
+          else:
+            mode = 'w'  # >
+          self.__pycmd_redirect_out = self.__arg.filew(redirect[3], mode)
+          self.__pycmd_redirect_th = WritePyCmdRedirectThread(
+            self.processPyCmd(cont, pycmd, args, self.__pipefd.stdin),
+            self.__pycmd_redirect_out)
+          self.__pycmd_redirect_th.start()
+        else:
+          assert redirect[2] == 'pyout'
+          pyout_list = []
+          self.__arg.rc[redirect[3]] = pyout_list
+          self.__pycmd_redirect_th = WritePyCmdRedirectPyOutThread(
+            self.processPyCmd(cont, pycmd, args, self.__pipefd.stdin),
+            pyout_list)
+          self.__pycmd_redirect_th.start()
+      else:
+        if isinstance(self.__pipefd.stdin, int):
+          raise Exception('Bug')
+        else:
+          self.__pipefd.stdout.add_generator(
+            self.processPyCmd(cont, pycmd, args, self.__pipefd.stdin))
+      return
+
+    pyout_ws = set()
+    for i, redirect in enumerate(redirects):
+      if redirect[2] != 'pyout':
+        continue
+      pyout_list = []
+      self.__arg.rc[redirect[3]] = pyout_list
+      pyout_r, pyout_w = self.__arg.ospipe()
+      self.__pyout_rs.add(pyout_r)
+      pyout_ws.add(pyout_w)
+      redirects[i] = (redirect[0], redirect[1], redirect[2], pyout_w)
+      th = WriteToPyOutThread(self.__arg.tofile(pyout_r), pyout_list)
+      th.start()
+      self.__pyout_thread.append(th)
+
+    pid = os.fork()
+    if pid != 0:
+      for pyout_w in pyout_ws:
+        self.__arg.close(pyout_w)
+      self.__arg.wait_thread.increuemnt()
+      self.__arg.callbacks[pid] = lambda rc: cont.resume('cmd_done', rc)
+    else:
+      for fd in self.__arg.all_w:
+        if fd != self.__pipefd.stdout and fd not in pyout_ws:
+          os.close(fd)
+      for fd in self.__arg.all_r:
+        if fd != self.__pipefd.stdin:
+          os.close(fd)
+      if self.__pipefd.stdout:
+        # dup2 does nothing args are same.
+        os.dup2(self.__pipefd.stdout, sys.stdout.fileno())
+      if self.__pipefd.stdin:
+        os.dup2(self.__pipefd.stdin, sys.stdin.fileno())
+      for redirect in redirects:
+        if redirect[2] == 'num':
+          os.dup2(redirect[3], redirect[1])
+        elif redirect[2] == 'pyout':
+          os.dup2(redirect[3], redirect[1])
+        else:
+          if redirect[0]:
+            mode = 'a'  # >>
+          else:
+            mode = 'w'  # >
+          f = file(redirect[3], mode)
+          os.dup2(f.fileno(), redirect[1])
+      str_args = []
+      for arg in args:
+        str_args.extend(self.convertToCmdArgs(arg))
+      try:
+        os.execvp(str_args[0], str_args)
+      except Exception, e:
+        print >> sys.stderr, e
+        sys.stderr.flush()
+        os._exit(1)
+
+
+class Evaluator(object):
+  def __init__(self, parser):
+    self.__parser = parser
+    self.__rc = {}
+
+  def __after_folk(self, pid):
+    # TODO(yunabe): Reimplement __after_folk hook if needed.
+    pass
+
+  def rc(self):
+    return self.__rc
+
   def execute(self, globals, locals):
     ast = self.__parser.parse()
+    ast = DiagnoseIOType(ast, VarDict(globals, locals))
     self.executeAst(ast, globals, locals)
 
   def executeAst(self, ast, globals, locals):
-    pids = {}
-    procs = []
-    self.evalAst(ast, [], procs)
-    procs_queue = [procs]
-
-    # TODO: Improve task parallelism.
-    while procs_queue:
-      procs = procs_queue[0]
-      procs_queue = procs_queue[1:]
-      pycmd_runners = []
-      recv_runners = []
-      self.executeProcs(
-        procs, globals, locals, pids, pycmd_runners, recv_runners)
-
-      for runner in pycmd_runners:
-        runner.join()
-        for dependency in runner.dependencies():
-          new_procs = self.continueFromDependency(
-            0 if runner.ok else 1, dependency)
-          if new_procs:
-            procs_queue.append(new_procs)
-
-      for runner in recv_runners:
-        runner.join()
-
-      while len(pids) > 0:
-        pid, rc = os.wait()
-        dependency = pids.pop(pid)
-        new_procs = self.continueFromDependency(rc, dependency)
-        if new_procs:
-          procs_queue.append(new_procs)
-
-  def continueFromDependency(self, rc, dependency_stack):
-    ok = rc == 0
-    while True:
-      if not dependency_stack:
-        return None
-      ast = dependency_stack.pop()
-      if isinstance(ast, Assign):
-        self.storeReturnCode(ast.name, rc)
-        continue
-      assert isinstance(ast, BinaryOp)
-      op, right = ast.op, ast.right
-      if (op == ';' or
-          (op == '&&' and ok == True) or
-          (op == '||' and ok == False)):
-        break
-    procs = []
-    self.evalAst(right, dependency_stack, procs)
-    return procs
-
-  def storeReturnCode(self, name, rc):
-    self.__rc[name] = rc
-
-  def executeProcs(self, procs, globals, locals,
-                   pids, pycmd_runners, recv_runners):
-    old_r = -1
-    pycmd_stack = []
-    # We need to store list of write-fd for runners to close them
-    # in child process!!
-    runner_wfd = []
-    for i, (proc, dependency) in enumerate(procs):
-      is_last = i == len(procs) - 1
-      args = []
-      for arg in proc.args:
-        args.extend(self.evalArg(arg, globals, locals))
-      redirects = []
-      for redirect in proc.redirects:
-        if redirect[0] == '=>':
-          redirects.append((False, 1, 'pyout', redirect[1]))
-        elif isinstance(redirect[2], int):
-          redirects.append((redirect[0], redirect[1], 'num', redirect[2]))
-        else:
-          targets = self.evalArg(redirect[2], globals, locals)
-          redirects.append((redirect[0], redirect[1], 'file', str(targets[0])))
-
-      pycmd = get_pycmd(args[0])
-      if pycmd:
-        pycmd_stack.append((pycmd, args, redirects, dependency))
-        continue
-
-      if pycmd_stack:
-        new_r, w = os.pipe()
-        runner = PyCmdRunner(self.__rc, pycmd_stack, old_r, w)
-        pycmd_runners.append(runner)
-        runner_wfd.append(w)
-        old_r = new_r
-        pycmd_stack = []
-
-      pyout_rs = []
-      pyout_ws = []
-      for i, redirect in enumerate(redirects):
-        if redirect[2] != 'pyout':
-          continue
-        pyout_list = []
-        self.__rc[redirect[3]] = pyout_list
-        pyout_r, pyout_w = os.pipe()
-        recv_runners.append(RecvRunner(pyout_r, pyout_list))
-        redirects[i] = (redirect[0], redirect[1], redirect[2], pyout_w)
-        pyout_rs.append(pyout_r)
-        pyout_ws.append(pyout_w)
-
-      if not is_last:
-        new_r, w = os.pipe()
-      pid = os.fork()
-      self.__after_folk(pid)
-      if pid != 0:
-        if not is_last:
-          # Don't forget to close pipe in the root process.
-          os.close(w)
-        if old_r != -1:
-          os.close(old_r)
-        for fd in pyout_ws:
-          os.close(fd)
-        pids[pid] = dependency
-        if not is_last:
-          old_r = new_r
+    # TODO: Fix exception handling.
+    # TODO: Share WaitChildThread in a process.
+    pool = []
+    cond = threading.Condition()
+    pids = []
+    wait_thread = WaitChildThread(pids, cond)
+    wait_thread.start()
+    callbacks = {}
+    write_done = []
+    arg = TaskArg(self.__rc, pool, pids, wait_thread, callbacks,
+                  write_done, cond, globals, locals)
+    runner = Runner(
+      EvalAstTask(arg,
+                  PipeFd(None, sys.stdin.fileno(), sys.stdout.fileno()),
+                  ast))
+    runner.run()
+    while not runner.done:
+      cond.acquire()
+      while len(pids) == 0 and len(write_done) == 0:
+        cond.wait()
+      if write_done:
+        cont, state, rc = write_done.pop()
+        cond.release()
+        cont.resume(state, rc)
       else:
-        for fd in runner_wfd:
-          os.close(fd)
-        for fd in pyout_rs:
-          os.close(fd)
-        if not is_last:
-          os.dup2(w, sys.stdout.fileno())
-        if old_r != -1:
-          os.dup2(old_r, sys.stdin.fileno())
-        for redirect in redirects:
-          if redirect[2] == 'num':
-            os.dup2(redirect[3], redirect[1])
-          elif redirect[2] == 'pyout':
-            os.dup2(redirect[3], redirect[1])
-          else:
-            if redirect[0]:
-              mode = 'a'  # >>
-            else:
-              mode = 'w'  # >
-            f = file(redirect[3], mode)
-            os.dup2(f.fileno(), redirect[1])
-        str_args = []
-        for arg in args:
-          str_args.extend(self.convertToCmdArgs(arg))
-        try:
-          os.execvp(str_args[0], str_args)
-        except Exception, e:
-          print >> sys.stderr, e
-          sys.stderr.flush()
-          os._exit(1)
-
-    if pycmd_stack:
-      # pycmd is the last command.
-      runner = PyCmdRunner(self.__rc, pycmd_stack, old_r, -1)
-      pycmd_runners.append(runner)
-
-    for runner in pycmd_runners:
-      runner.start()
-    for runner in recv_runners:
-      runner.start()
+        pid, rc = pids.pop()
+        cond.release()
+        callbacks[pid](rc)
+      runner.run()
+    wait_thread.stop()
+    wait_thread.join()
 
 
 def run(cmd_str, globals, locals, alias_map=None):
@@ -403,3 +781,62 @@ def run(cmd_str, globals, locals, alias_map=None):
   evaluator = Evaluator(parser)
   evaluator.execute(globals, locals)
   return evaluator.rc()
+
+
+class Controller(object):
+    def __init__(self, runner, task, callstack):
+        self.__runner = runner
+        self.__task = task
+        self.__stack = callstack
+
+    def call(self, task, state):
+        stack = ((self.__task, state), self.__stack)
+        self.__runner.push_call(stack, task)
+
+    def done(self, response):
+        self.__runner.push_done(self.__stack, response)
+
+    def resume(self, state, response):
+        self.__runner.push_done(((self.__task, state), self.__stack), response)
+
+
+class Runner(object):
+    def __init__(self, task):
+        # tasks is FIFO to run tasks in DFS way.
+        # To run tasks in BFS way, use collections.deque.
+        self.__tasks = [('call', None, task)]
+        self.response = None
+        self.done = False
+
+    def run(self):
+        while self.__tasks:
+            self.run_internal()
+
+    def __push_task(self, task):
+        self.__tasks.append(task)
+
+    def push_call(self, callstack, subtask):
+        self.__push_task(('call', callstack, subtask))
+
+    def push_done(self, callstack, response):
+        self.__push_task(('done', callstack, response))
+
+    def run_internal(self):
+        task = self.__tasks.pop()
+        type = task[0]
+        stack = task[1]
+        if type == 'call':
+            f = task[2]
+            cont = Controller(self, f, stack)
+            f.start(cont)
+        else:
+            # done
+            response = task[2]
+            if not stack:
+                self.response = response
+                self.done = True
+            else:
+                parent_stack = stack[1]
+                task, state = stack[0]
+                cont = Controller(self, task, parent_stack)
+                task.resume(cont, state, response)

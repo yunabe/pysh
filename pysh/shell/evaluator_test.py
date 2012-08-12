@@ -3,9 +3,53 @@ import shutil
 import tempfile
 import unittest
 
+from pysh.shell.evaluator import DiagnoseIOType
 from pysh.shell.evaluator import run
 from pysh.shell.evaluator import register_pycmd
 from pysh.shell.builtin import pycmd_send
+from pysh.shell.parser import Parser
+from pysh.shell.tokenizer import Tokenizer
+
+
+class DiagnoseIOTypeTest(unittest.TestCase):
+  def setUp(self):
+    pass
+
+  def tearDown(self):
+    pass
+
+  def parse(self, input):
+    tok = Tokenizer(input)
+    parser = Parser(tok)
+    return parser.parse()
+
+  def testCmd(self):
+    ast = self.parse('cat test.txt')
+    DiagnoseIOType(ast, {})
+    self.assertEquals('ST', ast.inType)
+    self.assertEquals('ST', ast.outType)
+
+  def testPyCmd(self):
+    ast = self.parse('pycmd test.txt')
+    DiagnoseIOType(ast, {})
+    self.assertEquals('PY', ast.inType)
+    self.assertEquals('PY', ast.outType)
+
+  def testPipe(self):
+    ast = self.parse('pycmd | cat test.txt')
+    DiagnoseIOType(ast, {})
+    self.assertEquals('PY', ast.inType)
+    self.assertEquals('ST', ast.outType)
+
+  def testAnd(self):
+    ast = self.parse('pycmd && cat test.txt')
+    try:
+      DiagnoseIOType(ast, {})
+      error = False
+    except:
+      error = True
+    self.assertTrue(error)
+
 
 class PyCmd(object):
   def process(self, args, input):
@@ -53,6 +97,7 @@ class RunTest(unittest.TestCase):
     run('echo foo bar > out.txt', globals(), locals())
     self.assertEquals('foo bar\n', file('out.txt').read())
 
+
   def testAppendRedirect(self):
     run('echo foo > out.txt', globals(), locals())
     run('echo bar >> out.txt', globals(), locals())
@@ -74,7 +119,8 @@ class RunTest(unittest.TestCase):
 
   def testFreeVarInLambda(self):
     k = 10
-    run('echo ${(lambda x: x + k)(3)}', globals(), locals())
+    run('echo ${(lambda x: x + k)(3)} > out.txt', globals(), locals())
+    self.assertEquals('13\n', file('out.txt').read())
 
   def testBuiltinVar(self):
     map_str = str(map)
@@ -84,13 +130,13 @@ class RunTest(unittest.TestCase):
   def testExpression(self):
     map_str = str(map)
     run('echo ${{len("abc") :[3 * 4 + 10]}} > out.txt',
-             globals(), locals())
+        globals(), locals())
     self.assertEquals('{3: [22]}\n', file('out.txt').read())
 
-  def testListComprehension(self):
-    run('send ${[x * x for x in xrange(3)]} > out.txt',
-             globals(), locals())
-    self.assertEquals('0\n1\n4\n', file('out.txt').read())
+  # def testListComprehension(self):
+  #   run('send ${[x * x for x in xrange(3)]} > out.txt',
+  #            globals(), locals())
+  #   self.assertEquals('0\n1\n4\n', file('out.txt').read())
 
   def testEnvVar(self):
     os.environ['YUNABE_PYSH_TEST_VAR'] = 'foobarbaz'
@@ -106,7 +152,7 @@ class RunTest(unittest.TestCase):
   def testListArgs(self):
     args = ['a', 'b', 10, {1: 3}]
     run('python -c "import sys;print sys.argv" '
-             '$args > out.txt', globals(), locals())
+        '$args > out.txt', globals(), locals())
     argv = eval(file('out.txt').read())
     self.assertEquals(['-c', 'a', 'b', '10', '{1: 3}'], argv)
 
@@ -120,23 +166,23 @@ class RunTest(unittest.TestCase):
 
   def testDivertRedirect(self):
     run('python -c "import sys;'
-             'print >> sys.stderr, \'error\';print \'out\'"'
-             '>out.txt 2>&1', globals(), locals())
+        'print >> sys.stderr, \'error\';print \'out\'"'
+        '>out.txt 2>&1', globals(), locals())
     self.assertEquals('error\nout\n', file('out.txt').read())
 
   def testPyCmd(self):
-    run('echo "foo\\nbar" | pycmd a b c | cat > out.txt',
-             globals(), locals())
-    self.assertEquals('pycmd\na\nb\nc\nfoo\nbar\n', file('out.txt').read())
+     run('echo "foo\\nbar" | pycmd a b c | cat > out.txt',
+         globals(), locals())
+     self.assertEquals('pycmd\na\nb\nc\nfoo\nbar\n', file('out.txt').read())
 
   def testPyCmdRedirect(self):
     run('echo "foo" | pycmd a b c > out.txt',
-             globals(), locals())
+        globals(), locals())
     self.assertEquals('pycmd\na\nb\nc\nfoo\n', file('out.txt').read())
 
   def testPyCmdSequence(self):
     run('echo "foo" | pycmd bar | pycmd baz | cat > out.txt',
-             globals(), locals())
+        globals(), locals())
     self.assertEquals('pycmd\nbaz\npycmd\nbar\nfoo\n', file('out.txt').read())
 
   def testPyCmdInVar(self):
@@ -149,32 +195,32 @@ class RunTest(unittest.TestCase):
 
   def testAnd(self):
     run('echo hoge >> out.txt && echo piyo >> out.txt',
-             globals(), locals())
+        globals(), locals())
     self.assertEquals('hoge\npiyo\n', file('out.txt').read())
 
   def testOr(self):
     run('echo hoge >> out.txt || echo piyo >> out.txt',
-             globals(), locals())
+        globals(), locals())
     self.assertEquals('hoge\n', file('out.txt').read())
 
   def testOrAnd(self):
     run('(echo foo >> out.txt || echo bar >> out.txt) && '
-             'echo baz >> out.txt', globals(), locals())
+        'echo baz >> out.txt', globals(), locals())
     self.assertEquals('foo\nbaz\n', file('out.txt').read())
 
   def testAndOr(self):
     run('(python -c "import sys;sys.exit(1)" >> out.txt && echo bar) || '
-             'echo baz >> out.txt)', globals(), locals())
+        'echo baz >> out.txt)', globals(), locals())
     self.assertEquals('baz\n', file('out.txt').read())
 
   def testAndNot(self):
     run('python -c "import sys;sys.exit(1)" > out.txt && '
-             'echo foo >> out.txt', globals(), locals())
+        'echo foo >> out.txt', globals(), locals())
     self.assertEquals('', file('out.txt').read())
 
   def testOrNot(self):
     run('python -c "import sys;sys.exit(1)" > out.txt || '
-             'echo foo >> out.txt', globals(), locals())
+        'echo foo >> out.txt', globals(), locals())
     self.assertEquals('foo\n', file('out.txt').read())
 
   def testAndPyCmd(self):
@@ -182,36 +228,38 @@ class RunTest(unittest.TestCase):
       def process(self, args, input):
         return ['tmp']
     tmp = Tmp()
-    run('$tmp > out.txt && echo foo >> out.txt', globals(), locals())
-    self.assertEquals('tmp\nfoo\n', file('out.txt').read())
+    run('$tmp > out.txt && $tmp >> out.txt', globals(), locals())
+    self.assertEquals('tmp\ntmp\n', file('out.txt').read())
 
   def testOrPyCmd(self):
     class Tmp(object):
       def process(self, args, input):
         return ['tmp']
     tmp = Tmp()
-    run('$tmp > out.txt || echo foo >> out.txt', globals(), locals())
+    run('$tmp > out.txt || $tmp >> out.txt', globals(), locals())
     self.assertEquals('tmp\n', file('out.txt').read())
 
   def testAndNotPyCmd(self):
     class Tmp(object):
       def process(self, args, input):
+        yield 'a'
         raise Exception('Error!')
     tmp = Tmp()
-    run('$tmp > out.txt && echo foo >> out.txt', globals(), locals())
-    self.assertEquals('', file('out.txt').read())
+    run('$tmp > out.txt && $tmp >> out.txt', globals(), locals())
+    self.assertEquals('a\n', file('out.txt').read())
 
   def testOrNotPyCmd(self):
     class Tmp(object):
       def process(self, args, input):
+        yield 'a'
         raise Exception('Error!')
     tmp = Tmp()
-    run('$tmp > out.txt || echo foo >> out.txt', globals(), locals())
-    self.assertEquals('foo\n', file('out.txt').read())
+    run('$tmp > out.txt || $tmp >> out.txt', globals(), locals())
+    self.assertEquals('a\na\n', file('out.txt').read())
 
   def testReturnCode(self):
     rc = run('python -c "import sys;sys.exit(7)" -> rc',
-                  globals(), locals())
+             globals(), locals())
     self.assertEquals(1, len(rc))
     self.assertEquals(True, os.WIFEXITED(rc['rc']))
     self.assertEquals(7, os.WEXITSTATUS(rc['rc']))
@@ -229,12 +277,12 @@ class RunTest(unittest.TestCase):
     self.assertEquals(['hello', 'world', '', 'piyo'], rc['out'])
 
   def testStoreOutputWithPyCmd(self):
-    rc = run('pycmd a b => out', globals(), locals())
-    self.assertEquals(['pycmd', 'a', 'b'], rc['out'])
+    rc = run('echo foo | pycmd a b => out', globals(), locals())
+    self.assertEquals(['pycmd', 'a', 'b', 'foo'], rc['out'])
 
   def testSemiColon(self):
     rc = run('echo foo >> out.txt; echo bar >> out.txt',
-                  globals(), locals())
+             globals(), locals())
     self.assertEquals('foo\nbar\n', file('out.txt').read())
 
   def testExpandUser(self):
