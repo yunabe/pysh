@@ -97,7 +97,6 @@ class RunTest(unittest.TestCase):
     run('echo foo bar > out.txt', globals(), locals())
     self.assertEquals('foo bar\n', file('out.txt').read())
 
-
   def testAppendRedirect(self):
     run('echo foo > out.txt', globals(), locals())
     run('echo bar >> out.txt', globals(), locals())
@@ -301,6 +300,26 @@ class RunTest(unittest.TestCase):
     self.assertEquals('bar.txt foo.txt\n', file('out1.txt').read())
     self.assertEquals('*.txt\n', file('out2.txt').read())
     self.assertEquals('a*b.doc\n', file('out3.txt').read())
+
+  def testBackQuote(self):
+    # TODO: backquote arg should be separated with spaces.
+    run('python -c "import sys;print \':\'.join(sys.argv)" '
+        '`echo foo bar` > out.txt', globals(), locals())
+    self.assertEquals('-c:foo bar\n', file('out.txt').read())
+
+  def testBackQuoteInRedirect(self):
+    run('echo foo > `echo out.txt`', globals(), locals())
+    self.assertEquals('foo\n', file('out.txt').read())
+
+  def testPipeInBackQuote(self):
+    run('python -c "import sys;print \':\'.join(sys.argv)" '
+        '`echo foo bar | cat` > out.txt', globals(), locals())
+    self.assertEquals('-c:foo bar\n', file('out.txt').read())
+
+  def testPyCmdInBackQuote(self):
+    run('python -c "import sys;print \':\'.join(sys.argv)" '
+        '`echo a | pycmd b c` > out.txt', globals(), locals())
+    self.assertEquals('-c:pycmd\nb\nc\na\n', file('out.txt').read())
 
 
 if __name__ == '__main__':

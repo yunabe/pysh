@@ -247,6 +247,10 @@ class TaskArg(object):
       del self.files[fd]
     else:
       os.close(fd)
+    if fd in self.all_w:
+      self.all_w.remove(fd)
+    if fd in self.all_r:
+      self.all_r.remove(fd)
 
 class EvalAstTask(object):
   def __init__(self, arg, pipefd, ast):
@@ -504,42 +508,33 @@ class AssignTask(object):
     cont.done(response)
 
 
-class EvalProcessTask(object):
-  def __init__(self, arg, pipefd, proc):
+class EvalArgTask(object):
+  def __init__(self, arg, pipefd, target):
     self.__arg = arg
     self.__pipefd = pipefd
-    self.__proc = proc
+    self.__target = target
+    self.__result = [None] * len(self.__target)
+    self.__not_ready = set(range(len(self.__target)))
 
-    self.__pycmd_redirect_out = None
-    self.__pycmd_redirect_th = None
-
-    self.__pyout_rs = set()
-    self.__pyout_thread = []
+  def start(self, cont):
+    self.evalBackquotedCmd(
+      cont, self.__target, self.__arg.globals, self.__arg.locals)
 
   def resume(self, cont, state, response):
-    assert state == 'pycmd_done' or state == 'cmd_done'
-    if self.__pycmd_redirect_th:
-      self.__pycmd_redirect_th.join()
-    if self.__pycmd_redirect_out:
-      self.__arg.close(self.__pycmd_redirect_out.fileno())
-    for th in self.__pyout_thread:
+    i = state[0]
+    if len(state) == 1:
+      self.__result[i] = response
+    else:
+      _, out, th, pipe = state
+      self.__arg.close(pipe[1])
       th.join()
-    for r in self.__pyout_rs:
-      self.__arg.close(r)
-    cont.done(response)
-
-  def processPyCmd(self, cont, pycmd, args, stdin):
-    try:
-      for e in pycmd.process(args, stdin):
-        yield e
-      rc = 0
-    except Exception, e:
-      print >> sys.stderr, e
-      rc = 1
-    self.__arg.condition.acquire()
-    self.__arg.write_done.append((cont, 'pycmd_done', rc))
-    self.__arg.condition.notify()
-    self.__arg.condition.release()
+      self.__arg.close(pipe[0])
+      self.__result[i] = (SINGLE_QUOTED_STRING, repr('\n'.join(out)))
+    self.__not_ready.remove(i)
+    if self.__not_ready:
+      return
+    result = self.evalArg(self.__result, self.__arg.globals, self.__arg.locals)
+    cont.done(result)
 
   def evalSubstitution(self, value, globals, locals):
     if value.startswith('${'):
@@ -555,20 +550,26 @@ class EvalProcessTask(object):
 
   def evalArg(self, arg, globals, locals):
     assert arg
-    arg = self.evalBackquotedCmd(arg, globals, locals)
     if not self.hasGlobPattern(arg):
       return self.evalArgNoGlob(arg, globals, locals)
     else:
       return self.evalArgGlob(arg, globals, locals)
 
-  def evalBackquotedCmd(self, arg, globals, locals):
-    result = []
-    for tok in arg:
+  def evalBackquotedCmd(self, cont, arg, globals, locals):
+    for i, tok in enumerate(arg):
       if tok[0] == BACKQUOTE:
-        raise Exception('Evaluation of backquote is not supported.')
+        ast = DiagnoseIOType(
+          tok[1], VarDict(self.__arg.globals, self.__arg.locals))
+        r, w = self.__arg.ospipe()
+        out = []
+        th = WriteToPyOutThread(self.__arg.tofile(r), out)
+        th.start()
+        cont.call(EvalAstTask(self.__arg,
+                              PipeFd(self.__pipefd, None, w),
+                              ast),
+                  (i, out, th, (r, w)))
       else:
-        result.append(tok)
-    return result
+        cont.resume((i,), tok)
   
   def evalArgNoGlob(self, arg, globals, locals):
     values = []
@@ -608,12 +609,6 @@ class EvalProcessTask(object):
     expanded.sort()
     return expanded
 
-  def convertToCmdArgs(self, arg):
-    if isinstance(arg, list):
-      return map(str, arg)
-    else:
-      return [str(arg)]
-
   def hasGlobPattern(self, arg):
     for tok in arg:
       if tok[0] == LITERAL:
@@ -621,21 +616,106 @@ class EvalProcessTask(object):
           return True
     return False
 
+
+class EvalProcessTask(object):
+  def __init__(self, arg, pipefd, proc):
+    self.__arg = arg
+    self.__pipefd = pipefd
+    self.__proc = proc
+
+    self.__pycmd_redirect_out = None
+    self.__pycmd_redirect_th = None
+
+    self.__pyout_rs = set()
+    self.__pyout_thread = []
+
+    self.__evaled_args = None
+    self.__evaled_args_not_ready = None
+    self.__evaled_redirects = None
+    self.__evaled_redirects_not_ready = None
+
+  def resume(self, cont, state, response):
+    invoke_if_ready = False
+    if isinstance(state, tuple) and len(state) == 2 and state[0] == 'evalarg':
+      self.__evaled_args[state[1]] = response
+      self.__evaled_args_not_ready.remove(state[1])
+      invoke_if_ready = True
+
+    elif isinstance(state, tuple) and len(state) == 2 and (
+      state[0] == 'putredirect'):
+      self.__evaled_redirects[state[1]] = response
+      self.__evaled_redirects_not_ready.remove(state[1])
+      invoke_if_ready = True
+
+    elif isinstance(state, tuple) and len(state) == 3 and (
+      state[0] == 'evalredirect'):
+      redirect = state[2]
+      self.__evaled_redirects[state[1]] = (
+        redirect[0], redirect[1], 'file', str(response[0]))
+      self.__evaled_redirects_not_ready.remove(state[1])
+      invoke_if_ready = True
+
+    if invoke_if_ready:
+      if not self.__evaled_args_not_ready and (
+        not self.__evaled_redirects_not_ready):
+        self.invokeProcess(cont)
+      return
+    
+    assert state == 'pycmd_done' or state == 'cmd_done'
+    if self.__pycmd_redirect_th:
+      self.__pycmd_redirect_th.join()
+    if self.__pycmd_redirect_out:
+      self.__arg.close(self.__pycmd_redirect_out.fileno())
+    for th in self.__pyout_thread:
+      th.join()
+    for r in self.__pyout_rs:
+      self.__arg.close(r)
+    cont.done(response)
+
+  def processPyCmd(self, cont, pycmd, args, stdin):
+    try:
+      for e in pycmd.process(args, stdin):
+        yield e
+      rc = 0
+    except Exception, e:
+      print >> sys.stderr, e
+      rc = 1
+    self.__arg.condition.acquire()
+    self.__arg.write_done.append((cont, 'pycmd_done', rc))
+    self.__arg.condition.notify()
+    self.__arg.condition.release()
+
+  def convertToCmdArgs(self, arg):
+    if isinstance(arg, list):
+      return map(str, arg)
+    else:
+      return [str(arg)]
+
   def start(self, cont):
     proc = self.__proc
-    args = []
-    for arg in proc.args:
-      args.extend(self.evalArg(arg, globals, locals))
-    redirects = []
-    for redirect in proc.redirects:
+    self.__evaled_args = [None] * len(proc.args)
+    self.__evaled_args_not_ready = set(range(len(proc.args)))
+    self.__evaled_redirects = [None] * len(proc.redirects)
+    self.__evaled_redirects_not_ready = set(range(len(proc.redirects)))
+    for i, arg in enumerate(proc.args):
+      cont.call(EvalArgTask(self.__arg, self.__pipefd, arg), ('evalarg', i))
+    for i, redirect in enumerate(proc.redirects):
       if redirect[0] == '=>':
-        redirects.append((False, 1, 'pyout', redirect[1]))
+        cont.resume(('putredirect', i), (False, 1, 'pyout', redirect[1]))
       elif isinstance(redirect[2], int):
-        redirects.append((redirect[0], redirect[1], 'num', redirect[2]))
+        cont.resume(('putredirect', i),
+                    (redirect[0], redirect[1], 'num', redirect[2]))
       else:
-        targets = self.evalArg(redirect[2], globals, locals)
-        redirects.append((redirect[0], redirect[1], 'file', str(targets[0])))
+        cont.call(EvalArgTask(self.__arg, self.__pipefd, redirect[2]),
+                  (('evalredirect', i, redirect)))
 
+  def invokeProcess(self, cont):
+    proc = self.__proc
+    args = []
+    for arg in self.__evaled_args:
+      args.extend(arg)
+
+    redirects = self.__evaled_redirects
     pycmd = get_pycmd(args[0])
     if pycmd:
       assert len(redirects) < 2
