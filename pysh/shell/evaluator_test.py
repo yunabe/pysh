@@ -133,10 +133,10 @@ class RunTest(unittest.TestCase):
         globals(), locals())
     self.assertEquals('{3: [22]}\n', file('out.txt').read())
 
-  # def testListComprehension(self):
-  #   run('send ${[x * x for x in xrange(3)]} > out.txt',
-  #            globals(), locals())
-  #   self.assertEquals('0\n1\n4\n', file('out.txt').read())
+  def testListComprehension(self):
+    run('send ${[x * x for x in xrange(3)]} > out.txt',
+        globals(), locals())
+    self.assertEquals('0\n1\n4\n', file('out.txt').read())
 
   def testEnvVar(self):
     os.environ['YUNABE_PYSH_TEST_VAR'] = 'foobarbaz'
