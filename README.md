@@ -15,7 +15,19 @@ command execution, pipe, redirection,
     if not name:
         name = 'world'
     > echo "Hello $name!"
-    
+
+## pysh command
+### Run scripts from files
+
+    pysh script.pysh
+
+### Run scripts from stdin
+
+    pysh - << 'EOF' arg0 arg1
+    import sys
+    > echo ${str(sys.argv[1:])}
+    EOF
+
 # Features
 ## Variable
 In pysh, you can use python variable from shell scripts.
@@ -118,4 +130,6 @@ The output is stored to Python variable as list
     print out  # [0, 1, 2, 4]
     
 ## Backquote
-Not yet supported
+You can use backquote to use results of commands as command arguments.
+
+    > echo `3 + 4`  # 7
