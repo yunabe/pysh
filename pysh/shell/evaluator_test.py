@@ -302,10 +302,21 @@ class RunTest(unittest.TestCase):
     self.assertEquals('a*b.doc\n', file('out3.txt').read())
 
   def testBackQuote(self):
-    # TODO: backquote arg should be separated with spaces.
     run('python -c "import sys;print \':\'.join(sys.argv)" '
         '`echo foo bar` > out.txt', globals(), locals())
-    self.assertEquals('-c:foo bar\n', file('out.txt').read())
+    self.assertEquals('-c:foo:bar\n', file('out.txt').read())
+
+  def testBackQuoteWIthPrefixSuffix(self):
+    run('python -c "import sys;print \':\'.join(sys.argv)" '
+        'hoge`echo foo bar`piyo > out.txt', globals(), locals())
+    self.assertEquals('-c:hogefoo:barpiyo\n', file('out.txt').read())
+
+  def testBackQuoteWIthGlob(self):
+    run('echo foo > foo.txt', globals(), locals())
+    run('echo bar > bar.txt', globals(), locals())
+    run('python -c "import sys;print \':\'.join(sys.argv)" '
+        '*`echo .txt` > out.txt', globals(), locals())
+    self.assertEquals('-c:bar.txt:foo.txt\n', file('out.txt').read())
 
   def testBackQuoteInRedirect(self):
     run('echo foo > `echo out.txt`', globals(), locals())
@@ -314,12 +325,12 @@ class RunTest(unittest.TestCase):
   def testPipeInBackQuote(self):
     run('python -c "import sys;print \':\'.join(sys.argv)" '
         '`echo foo bar | cat` > out.txt', globals(), locals())
-    self.assertEquals('-c:foo bar\n', file('out.txt').read())
+    self.assertEquals('-c:foo:bar\n', file('out.txt').read())
 
   def testPyCmdInBackQuote(self):
     run('python -c "import sys;print \':\'.join(sys.argv)" '
         '`echo a | pycmd b c` > out.txt', globals(), locals())
-    self.assertEquals('-c:pycmd\nb\nc\na\n', file('out.txt').read())
+    self.assertEquals('-c:pycmd:b:c:a\n', file('out.txt').read())
 
 
 if __name__ == '__main__':

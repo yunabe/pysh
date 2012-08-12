@@ -529,12 +529,28 @@ class EvalArgTask(object):
       self.__arg.close(pipe[1])
       th.join()
       self.__arg.close(pipe[0])
-      self.__result[i] = (SINGLE_QUOTED_STRING, repr('\n'.join(out)))
+      # backquoted arg is split by white spaces.
+      out = ' '.join(out).split()
+      self.__result[i] = [(SINGLE_QUOTED_STRING, repr(e)) for e in out]
     self.__not_ready.remove(i)
     if self.__not_ready:
       return
-    result = self.evalArg(self.__result, self.__arg.globals, self.__arg.locals)
-    cont.done(result)
+
+    entry = []
+    new_result = [entry]
+    for result in self.__result:
+      if isinstance(result, list):
+        for i, e in enumerate(result):
+          if i != 0:
+            entry = []
+            new_result.append(entry)
+          entry.append(e)
+      else:
+        entry.append(result)
+    for i, result in enumerate(new_result):
+      new_result[i] = self.evalArg(
+        result, self.__arg.globals, self.__arg.locals)
+    cont.done(reduce(lambda x, y: x + y, new_result))
 
   def evalSubstitution(self, value, globals, locals):
     if value.startswith('${'):
