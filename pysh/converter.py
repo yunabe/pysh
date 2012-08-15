@@ -2,6 +2,8 @@ import StringIO
 import sys
 
 from pysh.shell.tokenizer import Tokenizer
+from pysh.shell.parser import Assign
+from pysh.shell.parser import BinaryOp
 from pysh.shell.parser import Parser
 from pysh.shell.parser import Process
 
@@ -147,16 +149,20 @@ class Converter(object):
     return names
 
   def extractResponseNamesInternal(self, ast, names):
-    if not ast or not (isinstance(ast, tuple) or isinstance(ast, Process)):
+    if not ast or not (isinstance(ast, Process) or
+                       isinstance(ast, BinaryOp) or
+                       isinstance(ast, Assign)):
       return
     if isinstance(ast, Process):
       for redirect in ast.redirects:
         if redirect[0] == '=>':
           names.append(redirect[1])
       return
-    if ast[0] == '->':
-      names.append(ast[2])
-    for e in ast:
+    if isinstance(ast, Assign):
+      self.extractResponseNamesInternal(ast.cmd, names)
+      names.append(ast.name)
+      return
+    for e in (ast.left, ast.right):
       self.extractResponseNamesInternal(e, names)
 
   def convert(self, with_signature):

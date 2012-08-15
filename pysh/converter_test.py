@@ -2,6 +2,7 @@ import StringIO
 import unittest
 
 from pysh.converter import RoughLexer
+from pysh.converter import Converter
 
 class RoughLexerTest(unittest.TestCase):
   def testSimplePython(self):
@@ -75,6 +76,30 @@ class RoughLexerTest(unittest.TestCase):
     lexer = RoughLexer(reader)
     self.assertEquals(('', 'python', 'print 10 '), lexer.next())
     self.assertEquals((None, None, None), lexer.next())
+
+
+class ConverterTest(unittest.TestCase):
+  def testExtractResponseNames(self):
+    converter = Converter(None, None)
+    names = converter.extractResponseNames('echo foo -> bar')
+    self.assertEquals(['bar'], names)
+
+  def testExtractResponseNames_Redirection(self):
+    converter = Converter(None, None)
+    names = converter.extractResponseNames('echo foo => bar')
+    self.assertEquals(['bar'], names)
+
+  def testExtractResponseNames_InBinaryOp(self):
+    converter = Converter(None, None)
+    names = converter.extractResponseNames('echo foo -> bar && echo baz => qux')
+    self.assertEquals(['bar', 'qux'], names)
+
+  def testExtractResponseNames_InAssignCmd(self):
+    converter = Converter(None, None)
+    names = converter.extractResponseNames(
+      '(echo foo -> bar && echo baz => qux) -> piyo')
+    self.assertEquals(['bar', 'qux', 'piyo'], names)
+
 
 
 if __name__ == '__main__':
