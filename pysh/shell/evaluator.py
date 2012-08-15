@@ -1,4 +1,6 @@
+import atexit
 import collections
+import functools
 import glob
 import os
 import re
@@ -198,13 +200,9 @@ class PyPipe(object):
 
 
 class TaskArg(object):
-  def __init__(self, rc, pool, pids, wait_thread, callbacks,
-               write_done, cond, globals, locals):
+  def __init__(self, rc, pool, write_done, cond, globals, locals):
     self.rc = rc
     self.pool = pool
-    self.pids = []
-    self.callbacks = callbacks
-    self.wait_thread = wait_thread
     self.all_r = set()
     self.all_w = set()
     self.files = {}
@@ -339,51 +337,66 @@ class WriteToPyOutThread(threading.Thread):
       self.__output.append(line.rstrip('\r\n'))
 
 
-class WaitChildThread(threading.Thread):
-  def __init__(self, pids, pids_cond):
-    threading.Thread.__init__(self)
-    self.__pids = pids
-    self.__pids_cond = pids_cond
-    self.__child_count = 0
-    self.__child_count_cond = threading.Condition()
-    self.__stop = False
+global_wait_thread = None
+global_wait_thread_lock = threading.Lock()
 
-  def increuemnt(self):
-    self.__child_count_cond.acquire()
-    self.__child_count += 1
-    if self.__child_count == 1:
-      self.__child_count_cond.notify()
-    self.__child_count_cond.release()
+
+class WaitChildThread(threading.Thread):
+  def __init__(self):
+    threading.Thread.__init__(self)
+    # setDaemon so that Python can exit if the thread is running.
+    self.setDaemon(True)
+    self.__callbacks = {}
+    self.__unhandled = {}  # {pid: rc}
+    self.__stop = False
+    self.__cond = threading.Condition()
+
+  def register_callback(self, pid, callback):
+    '''Register callback for the end of process.
+
+    Please note that this method is called by other threads.
+    '''
+    self.__cond.acquire()
+    unhandled_rc = None
+    if pid in self.__unhandled:
+      unhandled_rc = self.__unhandled[pid]
+      del self.__unhandled[pid]
+    else:
+      assert not pid in self.__callbacks
+      self.__callbacks[pid] = callback
+      if len(self.__callbacks) == 1:
+        self.__cond.notify()  # notify to the wait thread
+    self.__cond.release()
+    if unhandled_rc is not None:
+      callback(unhandled_rc)
 
   def stop(self):
-    self.__child_count_cond.acquire()
+    self.__cond.acquire()
     self.__stop = True
-    self.__child_count_cond.notify()
-    self.__child_count_cond.release()
+    self.__cond.notify()
+    self.__cond.release()
 
   def run(self):
     while True:
-      self.__child_count_cond.acquire()
-      while self.__child_count == 0 and not self.__stop:
-        self.__child_count_cond.wait()
-
-      if self.__child_count > 0:
-        self.__child_count -= 1
-        done = False
-      else:
-        assert(self.__stop)
-        done = True
-
-      self.__child_count_cond.release()
+      self.__cond.acquire()
+      while len(self.__callbacks) == 0 and not self.__stop:
+        self.__cond.wait()
+      done = len(self.__callbacks) == 0
+      self.__cond.release()
 
       if done:
         break
       pid, rc = os.wait()
-      self.__pids_cond.acquire()
-      self.__pids.append((pid, rc))
-      if len(self.__pids) == 1:
-        self.__pids_cond.notify()
-      self.__pids_cond.release()
+      callback = None
+      self.__cond.acquire()
+      if pid in self.__callbacks:
+        callback = self.__callbacks[pid]
+        del self.__callbacks[pid]
+      else:
+        self.__unhandled[pid] = rc
+      self.__cond.release()
+      if callback:
+        callback(rc)
 
 
 class NativeToPyTask(object):
@@ -783,8 +796,12 @@ class EvalProcessTask(object):
     if pid != 0:
       for pyout_w in pyout_ws:
         self.__arg.close(pyout_w)
-      self.__arg.wait_thread.increuemnt()
-      self.__arg.callbacks[pid] = lambda rc: cont.resume('cmd_done', rc)
+      def process_done_callback(rc):
+        self.__arg.condition.acquire()
+        self.__arg.write_done.append((cont, 'cmd_done', rc))
+        self.__arg.condition.notify()
+        self.__arg.condition.release()
+      global_wait_thread.register_callback(pid, process_done_callback)
     else:
       for fd in self.__arg.all_w:
         if fd != self.__pipefd.stdout and fd not in pyout_ws:
@@ -839,15 +856,10 @@ class Evaluator(object):
 
   def executeAst(self, ast, globals, locals):
     # TODO: Fix exception handling.
-    # TODO: Share WaitChildThread in a process.
     pool = []
     cond = threading.Condition()
-    pids = []
-    wait_thread = WaitChildThread(pids, cond)
-    wait_thread.start()
-    callbacks = {}
     write_done = []
-    arg = TaskArg(self.__rc, pool, pids, wait_thread, callbacks,
+    arg = TaskArg(self.__rc, pool,
                   write_done, cond, globals, locals)
     runner = Runner(
       EvalAstTask(arg,
@@ -856,22 +868,29 @@ class Evaluator(object):
     runner.run()
     while not runner.done:
       cond.acquire()
-      while len(pids) == 0 and len(write_done) == 0:
+      while len(write_done) == 0:
         cond.wait()
-      if write_done:
-        cont, state, rc = write_done.pop()
-        cond.release()
-        cont.resume(state, rc)
-      else:
-        pid, rc = pids.pop()
-        cond.release()
-        callbacks[pid](rc)
+      cont, state, rc = write_done.pop()
+      cond.release()
+      cont.resume(state, rc)
       runner.run()
-    wait_thread.stop()
-    wait_thread.join()
+
+
+def stop_global_wait_thread():
+  assert global_wait_thread
+  global_wait_thread.stop()
+  global_wait_thread.join()
 
 
 def run(cmd_str, globals, locals, alias_map=None):
+  global global_wait_thread
+  if not global_wait_thread:
+    global_wait_thread_lock.acquire()
+    if not global_wait_thread:
+      global_wait_thread = WaitChildThread()
+      global_wait_thread.start()
+      atexit.register(stop_global_wait_thread)
+    global_wait_thread_lock.release()
   tok = Tokenizer(cmd_str, alias_map=alias_map)
   parser = Parser(tok)
   evaluator = Evaluator(parser)
