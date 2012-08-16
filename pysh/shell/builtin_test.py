@@ -38,30 +38,49 @@ class BuiltinTest(unittest.TestCase):
     self.tmpdir.__exit__(None, None, None)
     os.chdir(self.original_dir)
 
-  def testSendData(self):
+  def testEchoString(self):
+    run('echo foo bar "piyo" | sort > out.txt', globals(), locals())
+    self.assertEquals('foo bar piyo\n', file('out.txt').read())
+
+  def testEchoList(self):
     data = ['foo', 'bar', 'baz']
-    run('send $data | sort > out.txt', globals(), locals())
-    self.assertEquals('bar\nbaz\nfoo\n', file('out.txt').read())
+    run('echo $data > out.txt', globals(), locals())
+    self.assertEquals('foo\nbar\nbaz\n', file('out.txt').read())
+
+  def testEchoTuple(self):
+    data = ('foo', 'bar', 'baz')
+    run('echo $data > out.txt', globals(), locals())
+    self.assertEquals('foo\nbar\nbaz\n', file('out.txt').read())
+
+  def testEchoXrange(self):
+    data = xrange(3)
+    run('echo $data > out.txt', globals(), locals())
+    self.assertEquals('0\n1\n2\n', file('out.txt').read())
+
+  def testEchoMix(self):
+    data = ['foo', 'bar']
+    run('echo a $data b > out.txt', globals(), locals())
+    self.assertEquals('a\nfoo\nbar\nb\n', file('out.txt').read())
 
   def testMapCmd(self):
-    run('echo "1\\n2\\n3\\n4\\n5" | map ${lambda l: int(l)} |'
+    run('/bin/echo "1\\n2\\n3\\n4\\n5" | map ${lambda l: int(l)} |'
              'map ${lambda x: x * x} > out.txt', globals(), locals())
     self.assertEquals('1\n4\n9\n16\n25\n', file('out.txt').read())
 
   def testFilterCmd(self):
-    run('echo "cupcake\\ndonut\\nfroyo\\nginger" |'
+    run('/bin/echo "cupcake\\ndonut\\nfroyo\\nginger" |'
              'filter ${lambda l: "e" in l} > out.txt',
              globals(), locals())
     self.assertEquals('cupcake\nginger\n', file('out.txt').read())
 
   def testReduceCmd(self):
-    run('echo "foo\\nbar" | reduce ${lambda x, y: x + y} |'
+    run('/bin/echo "foo\\nbar" | reduce ${lambda x, y: x + y} |'
              'cat > out.txt', globals(), locals())
     self.assertEquals('foobar\n', file('out.txt').read())
 
   def testReadCvsCmd(self):
-    run('echo \'a,b,"c,"\' > in.txt', globals(), locals())
-    run('echo \'e,"f","""g"""\' >> in.txt', globals(), locals())
+    run('/bin/echo \'a,b,"c,"\' > in.txt', globals(), locals())
+    run('/bin/echo \'e,"f","""g"""\' >> in.txt', globals(), locals())
     run('cat in.txt | readcsv |'
              'map ${lambda row: row[2]} > out.txt',
              globals(), locals())
