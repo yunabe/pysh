@@ -13,17 +13,6 @@ class pycmd_send(object):
     return args[1]
 
 
-class pycmd_recv(object):
-  def process(self, args, input):
-    if isinstance(input, file):
-      input = file_to_array(input)
-    assert len(args) == 2
-    l = args[1]
-    assert isinstance(l, list)
-    l.extend(input)
-    return []
-
-
 class pycmd_map(object):
   def process(self, args, input):
     assert len(args) == 2
@@ -75,7 +64,6 @@ class pycmd_cd(object):
 def register_builtin():
   register_pycmd = pysh.shell.evaluator.register_pycmd
   register_pycmd('send', pycmd_send())
-  register_pycmd('recv', pycmd_recv())
   register_pycmd('map', pycmd_map())
   register_pycmd('filter', pycmd_filter())
   register_pycmd('reduce', pycmd_reduce())

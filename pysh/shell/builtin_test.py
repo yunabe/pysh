@@ -38,11 +38,6 @@ class BuiltinTest(unittest.TestCase):
     self.tmpdir.__exit__(None, None, None)
     os.chdir(self.original_dir)
 
-  def testReceiveData(self):
-    out = []
-    run('echo "foo\\nbar" | recv $out', globals(), locals())
-    self.assertEquals(['foo', 'bar'], out)
-
   def testSendData(self):
     data = ['foo', 'bar', 'baz']
     run('send $data | sort > out.txt', globals(), locals())
