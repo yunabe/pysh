@@ -63,8 +63,13 @@ class pycmd_readcsv(object):
 
 class pycmd_cd(object):
   def process(self, args, input):
-    assert len(args) == 2
-    os.chdir(args[1])
+    assert len(args) == 2 or len(args) == 1
+    if len(args) == 2:
+      dir = args[1]
+    else:
+      dir = os.environ.get('HOME', '')
+    if dir:
+      os.chdir(dir)
     return ()
 
 def register_builtin():

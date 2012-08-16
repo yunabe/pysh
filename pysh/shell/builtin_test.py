@@ -76,5 +76,9 @@ class BuiltinTest(unittest.TestCase):
     rc = run('cd /dev', globals(), locals())
     self.assertEquals('/dev', os.getcwd())
 
+  def testChangeDirHome(self):
+    rc = run('cd', globals(), locals())
+    self.assertEquals(os.environ['HOME'], os.getcwd())
+
 if __name__ == '__main__':
   unittest.main()
