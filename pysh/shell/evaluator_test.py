@@ -51,17 +51,16 @@ class DiagnoseIOTypeTest(unittest.TestCase):
     self.assertTrue(error)
 
 
-class PyCmd(object):
-  def process(self, args, input):
-    for arg in args:
-      yield arg
-    if not input:
-      return
-    for line in input:
-      yield line.rstrip('\n')
+def PyCmd(args, input):
+  for arg in args:
+    yield arg
+  if not input:
+    return
+  for line in input:
+    yield line.rstrip('\n')
 
-register_pycmd('pycmd', PyCmd())
-register_pycmd('pycmd_echo', pycmd_echo())  # for testListComprehension
+register_pycmd('pycmd', PyCmd)
+register_pycmd('pycmd_echo', pycmd_echo)  # for testListComprehension
 
 class TempDir(object):
   def __init__(self):
@@ -185,10 +184,8 @@ class RunTest(unittest.TestCase):
     self.assertEquals('pycmd\nbaz\npycmd\nbar\nfoo\n', file('out.txt').read())
 
   def testPyCmdInVar(self):
-    class Tmp(object):
-      def process(self, args, input):
-        return ['tmp', 19]
-    tmp = Tmp()
+    def tmp(args, input):
+      return ['tmp', 19]
     run('$tmp > out.txt', globals(), locals())
     self.assertEquals('tmp\n19\n', file('out.txt').read())
 
@@ -223,36 +220,28 @@ class RunTest(unittest.TestCase):
     self.assertEquals('foo\n', file('out.txt').read())
 
   def testAndPyCmd(self):
-    class Tmp(object):
-      def process(self, args, input):
-        return ['tmp']
-    tmp = Tmp()
+    def tmp(args, input):
+      return ['tmp']
     run('$tmp > out.txt && $tmp >> out.txt', globals(), locals())
     self.assertEquals('tmp\ntmp\n', file('out.txt').read())
 
   def testOrPyCmd(self):
-    class Tmp(object):
-      def process(self, args, input):
-        return ['tmp']
-    tmp = Tmp()
+    def tmp(args, input):
+      return ['tmp']
     run('$tmp > out.txt || $tmp >> out.txt', globals(), locals())
     self.assertEquals('tmp\n', file('out.txt').read())
 
   def testAndNotPyCmd(self):
-    class Tmp(object):
-      def process(self, args, input):
-        yield 'a'
-        raise Exception('Error!')
-    tmp = Tmp()
+    def tmp(args, input):
+      yield 'a'
+      raise Exception('Error!')
     run('$tmp > out.txt && $tmp >> out.txt', globals(), locals())
     self.assertEquals('a\n', file('out.txt').read())
 
   def testOrNotPyCmd(self):
-    class Tmp(object):
-      def process(self, args, input):
-        yield 'a'
-        raise Exception('Error!')
-    tmp = Tmp()
+    def tmp(args, input):
+      yield 'a'
+      raise Exception('Error!')
     run('$tmp > out.txt || $tmp >> out.txt', globals(), locals())
     self.assertEquals('a\na\n', file('out.txt').read())
 

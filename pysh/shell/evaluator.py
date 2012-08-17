@@ -143,7 +143,7 @@ def register_pycmd(name, pycmd):
 def get_pycmd(name):
   if isinstance(name, str) and name in __pycmd_map:
     return __pycmd_map[name]
-  elif hasattr(name, 'process'):
+  elif callable(name):
     return name
   else:
     return None
@@ -703,7 +703,7 @@ class EvalProcessTask(object):
 
   def processPyCmd(self, cont, pycmd, args, stdin):
     try:
-      for e in pycmd.process(args, stdin):
+      for e in pycmd(args, stdin):
         yield e
       rc = 0
     except Exception, e:
