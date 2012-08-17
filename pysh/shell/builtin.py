@@ -9,11 +9,6 @@ def file_to_array(f):
   return map(lambda line: line.rstrip('\r\n'), f.readlines())
 
 
-class pycmd_send(object):
-  def process(self, args, input):
-    assert len(args) == 2
-    return args[1]
-
 class pycmd_echo(object):
   def process(self, args, input):
     line = []
