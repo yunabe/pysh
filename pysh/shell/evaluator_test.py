@@ -6,7 +6,7 @@ import unittest
 from pysh.shell.evaluator import DiagnoseIOType
 from pysh.shell.evaluator import run
 from pysh.shell.evaluator import register_pycmd
-from pysh.shell.builtin import pycmd_send
+from pysh.shell.builtin import pycmd_echo
 from pysh.shell.parser import Parser
 from pysh.shell.tokenizer import Tokenizer
 
@@ -61,7 +61,7 @@ class PyCmd(object):
       yield line.rstrip('\n')
 
 register_pycmd('pycmd', PyCmd())
-register_pycmd('send', pycmd_send())  # for testListComprehension
+register_pycmd('pycmd_echo', pycmd_echo())  # for testListComprehension
 
 class TempDir(object):
   def __init__(self):
@@ -133,7 +133,7 @@ class RunTest(unittest.TestCase):
     self.assertEquals('{3: [22]}\n', file('out.txt').read())
 
   def testListComprehension(self):
-    run('send ${[x * x for x in xrange(3)]} > out.txt',
+    run('pycmd_echo ${[x * x for x in xrange(3)]} > out.txt',
         globals(), locals())
     self.assertEquals('0\n1\n4\n', file('out.txt').read())
 
