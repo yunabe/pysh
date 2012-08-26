@@ -31,6 +31,15 @@ from pysh.shell.parser import Parser
 from pysh.shell.parser import Process
 from pysh.shell.parser import BinaryOp
 from pysh.shell.tokenizer import Tokenizer
+from pysh.shell.task_manager import Runner
+
+
+class IdentityTask(object):
+  def __init__(self, response):
+    self.__response = response
+
+  def start(self, cont):
+    cont.done(self.__response)
 
 
 PYVAR_PATTERN = re.compile(r'^[_a-zA-Z][_a-zA-Z0-9]*$')
@@ -598,7 +607,7 @@ class EvalArgTask(object):
                               ast),
                   (i, out, th, (r, w)))
       else:
-        cont.resume((i,), tok)
+        cont.call(IdentityTask(tok), (i,))
   
   def evalArgNoGlob(self, arg, globals, locals):
     values = []
@@ -730,10 +739,11 @@ class EvalProcessTask(object):
       cont.call(EvalArgTask(self.__arg, self.__pipefd, arg), ('evalarg', i))
     for i, redirect in enumerate(proc.redirects):
       if redirect[0] == '=>':
-        cont.resume(('putredirect', i), (False, 1, 'pyout', redirect[1]))
+        cont.call(IdentityTask((False, 1, 'pyout', redirect[1])),
+                  ('putredirect', i))
       elif isinstance(redirect[2], int):
-        cont.resume(('putredirect', i),
-                    (redirect[0], redirect[1], 'num', redirect[2]))
+        cont.call(IdentityTask((redirect[0], redirect[1], 'num', redirect[2])),
+                  ('putredirect', i))
       else:
         cont.call(EvalArgTask(self.__arg, self.__pipefd, redirect[2]),
                   (('evalredirect', i, redirect)))
@@ -872,7 +882,7 @@ class Evaluator(object):
         cond.wait()
       cont, state, rc = write_done.pop()
       cond.release()
-      cont.resume(state, rc)
+      cont.call(IdentityTask(rc), state)
       runner.run()
 
 
@@ -896,62 +906,3 @@ def run(cmd_str, globals, locals, alias_map=None):
   evaluator = Evaluator(parser)
   evaluator.execute(globals, locals)
   return evaluator.rc()
-
-
-class Controller(object):
-    def __init__(self, runner, task, callstack):
-        self.__runner = runner
-        self.__task = task
-        self.__stack = callstack
-
-    def call(self, task, state):
-        stack = ((self.__task, state), self.__stack)
-        self.__runner.push_call(stack, task)
-
-    def done(self, response):
-        self.__runner.push_done(self.__stack, response)
-
-    def resume(self, state, response):
-        self.__runner.push_done(((self.__task, state), self.__stack), response)
-
-
-class Runner(object):
-    def __init__(self, task):
-        # tasks is FIFO to run tasks in DFS way.
-        # To run tasks in BFS way, use collections.deque.
-        self.__tasks = [('call', None, task)]
-        self.response = None
-        self.done = False
-
-    def run(self):
-        while self.__tasks:
-            self.run_internal()
-
-    def __push_task(self, task):
-        self.__tasks.append(task)
-
-    def push_call(self, callstack, subtask):
-        self.__push_task(('call', callstack, subtask))
-
-    def push_done(self, callstack, response):
-        self.__push_task(('done', callstack, response))
-
-    def run_internal(self):
-        task = self.__tasks.pop()
-        type = task[0]
-        stack = task[1]
-        if type == 'call':
-            f = task[2]
-            cont = Controller(self, f, stack)
-            f.start(cont)
-        else:
-            # done
-            response = task[2]
-            if not stack:
-                self.response = response
-                self.done = True
-            else:
-                parent_stack = stack[1]
-                task, state = stack[0]
-                cont = Controller(self, task, parent_stack)
-                task.resume(cont, state, response)
