@@ -321,6 +321,12 @@ class RunTest(unittest.TestCase):
         '`echo a | pycmd b c` > out.txt', globals(), locals())
     self.assertEquals('-c:pycmd:b:c:a\n', file('out.txt').read())
 
+  def testPyCmdReadInBackQuote(self):
+    run('echo foo bar | pycmd a `pycmd 1 2` b | cat > out.txt',
+        globals(), locals())
+    self.assertEquals('pycmd\na\npycmd\n1\n2\nfoo\nbar\nb\n',
+                      file('out.txt').read())
+
 
 if __name__ == '__main__':
   unittest.main()

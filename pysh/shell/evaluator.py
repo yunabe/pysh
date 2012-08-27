@@ -95,13 +95,7 @@ def DiagnoseIOType(ast, vardict):
 # Maybe, we don't need outType.
 def DiagnoseIOTypeInternal(ast, vardict):
   if isinstance(ast, Process):
-    is_pycmd = IsPyCmd(ast, vardict)
-    if is_pycmd:
-      ast.inType = 'PY'
-      ast.outType = 'PY'
-    else:
-      ast.inType = 'ST'
-      ast.outType = 'ST'
+    DiagnoseProcessIOType(ast, vardict)
   elif isinstance(ast, Assign):
     DiagnoseIOTypeInternal(ast.cmd, vardict)
     ast.inType = ast.cmd.inType
@@ -132,6 +126,26 @@ def DiagnoseIOTypeInternal(ast, vardict):
       else:
         ast.outType = 'MIX'
         raise Exception('Not supported.')
+
+
+def DiagnoseProcessIOType(proc, vardict):
+  is_pycmd = IsPyCmd(proc, vardict)
+  if is_pycmd:
+    proc.inType = 'PY'
+    proc.outType = 'PY'
+  else:
+    proc.inType = 'ST'
+    proc.outType = 'ST'
+  for arg in proc.args:
+    for i, (tok, ast) in enumerate(arg):
+      if tok != 'bquote':
+        continue
+      DiagnoseIOTypeInternal(ast, vardict)
+      if ast.inType != proc.inType:
+        raise Exception('Can not combile cmd that reads python object and '
+                        'cmd that reads file stream.')
+      if ast.outType == 'PY':
+        arg[i] = (tok, NativeToPy(ast, False, True))
 
 
 class VarDict(dict):
@@ -596,8 +610,7 @@ class EvalArgTask(object):
   def evalBackquotedCmd(self, cont, arg, globals, locals):
     for i, tok in enumerate(arg):
       if tok[0] == BACKQUOTE:
-        ast = DiagnoseIOType(
-          tok[1], VarDict(self.__arg.globals, self.__arg.locals))
+        ast = tok[1]
         r, w = self.__arg.ospipe()
         out = []
         th = WriteToPyOutThread(self.__arg.tofile(r), out)
