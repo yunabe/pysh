@@ -30,6 +30,7 @@ from pysh.shell.parser import Assign
 from pysh.shell.parser import Parser
 from pysh.shell.parser import Process
 from pysh.shell.parser import BinaryOp
+from pysh.shell.pycmd import get_pycmd
 from pysh.shell.tokenizer import Tokenizer
 from pysh.shell.task_manager import Runner
 
@@ -154,22 +155,6 @@ class VarDict(dict):
     for d in (os.environ, globals, locals):
       for key in d:
         self[key] = d[key]
-
-
-__pycmd_map = {}
-
-
-def register_pycmd(name, pycmd):
-  __pycmd_map[name] = pycmd
-
-
-def get_pycmd(name):
-  if isinstance(name, str) and name in __pycmd_map:
-    return __pycmd_map[name]
-  elif callable(name):
-    return name
-  else:
-    return None
 
 
 class PipeFd(object):

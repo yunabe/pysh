@@ -3,7 +3,8 @@ import csv
 import os
 import StringIO
 
-import pysh.shell.evaluator
+from pysh.shell.pycmd import register_pycmd
+
 
 def file_to_array(f):
   return map(lambda line: line.rstrip('\r\n'), f.readlines())
@@ -68,8 +69,8 @@ def pycmd_cd(args, input):
     os.chdir(dir)
   return ()
 
+
 def register_builtin():
-  register_pycmd = pysh.shell.evaluator.register_pycmd
   register_pycmd('echo', pycmd_echo)
   register_pycmd('map', pycmd_map)
   register_pycmd('filter', pycmd_filter)
