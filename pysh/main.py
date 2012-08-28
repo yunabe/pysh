@@ -40,7 +40,6 @@ def main():
     py = name + '.py'
     reader = file(script, 'r')
     writer = file(py, 'w')
-    writer.write(SIGNATURE)
     Converter(reader, writer).convert(True)
     writer.close()
     argv = sys.argv[2:]
