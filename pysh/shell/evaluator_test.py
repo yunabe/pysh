@@ -3,13 +3,15 @@ import shutil
 import tempfile
 import unittest
 
+import pysh.shell
 from pysh.shell.evaluator import DiagnoseIOType
 from pysh.shell.evaluator import run
 from pysh.shell.pycmd import register_pycmd
-from pysh.shell.builtin import pycmd_echo
 from pysh.shell.parser import Parser
 from pysh.shell.tokenizer import Tokenizer
 
+# pysh.shell.builtin shouldn't be included in evaluator_test.py
+assert not hasattr(pysh.shell, 'builtin')
 
 class DiagnoseIOTypeTest(unittest.TestCase):
   def setUp(self):
@@ -60,7 +62,6 @@ def PyCmd(args, input):
     yield line.rstrip('\n')
 
 register_pycmd('pycmd', PyCmd)
-register_pycmd('pycmd_echo', pycmd_echo)  # for testListComprehension
 
 class TempDir(object):
   def __init__(self):
@@ -132,7 +133,9 @@ class RunTest(unittest.TestCase):
     self.assertEquals('{3: [22]}\n', file('out.txt').read())
 
   def testListComprehension(self):
-    run('pycmd_echo ${[x * x for x in xrange(3)]} > out.txt',
+    def tmp(args, input):
+      return [x * x for x in xrange(3)]
+    run('$tmp ${[x * x for x in xrange(3)]} > out.txt',
         globals(), locals())
     self.assertEquals('0\n1\n4\n', file('out.txt').read())
 

@@ -4,12 +4,14 @@ import os
 import StringIO
 
 from pysh.shell.pycmd import register_pycmd
+from pysh.shell.pycmd import pycmd
 
 
 def file_to_array(f):
   return map(lambda line: line.rstrip('\r\n'), f.readlines())
 
 
+@pycmd(name='echo')
 def pycmd_echo(args, input):
   line = []
   for arg in args[1:]:
@@ -26,6 +28,7 @@ def pycmd_echo(args, input):
     yield ' '.join(line)
 
 
+@pycmd(name='map')
 def pycmd_map(args, input):
   assert len(args) == 2
   if isinstance(input, file):
@@ -35,6 +38,7 @@ def pycmd_map(args, input):
   return (f(x) for x in input)
 
 
+@pycmd(name='filter')
 def pycmd_filter(args, input):
   assert len(args) == 2
   if isinstance(input, file):
@@ -46,6 +50,7 @@ def pycmd_filter(args, input):
       yield x
 
 
+@pycmd(name='reduce')
 def pycmd_reduce(args, input):
   assert len(args) == 2
   if isinstance(input, file):
@@ -55,10 +60,12 @@ def pycmd_reduce(args, input):
   return [reduce(f, input)]
 
 
+@pycmd(name='readcsv')
 def pycmd_readcsv(args, input):
   return csv.reader(input)
 
 
+@pycmd(name='cd')
 def pycmd_cd(args, input):
   assert len(args) == 2 or len(args) == 1
   if len(args) == 2:
@@ -68,12 +75,3 @@ def pycmd_cd(args, input):
   if dir:
     os.chdir(dir)
   return ()
-
-
-def register_builtin():
-  register_pycmd('echo', pycmd_echo)
-  register_pycmd('map', pycmd_map)
-  register_pycmd('filter', pycmd_filter)
-  register_pycmd('reduce', pycmd_reduce)
-  register_pycmd('readcsv', pycmd_readcsv)
-  register_pycmd('cd', pycmd_cd)
