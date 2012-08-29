@@ -5,7 +5,7 @@ import unittest
 
 from pysh.shell.evaluator import DiagnoseIOType
 from pysh.shell.evaluator import run
-from pysh.shell.evaluator import register_pycmd
+from pysh.shell.pycmd import register_pycmd
 from pysh.shell.builtin import pycmd_echo
 from pysh.shell.parser import Parser
 from pysh.shell.tokenizer import Tokenizer
