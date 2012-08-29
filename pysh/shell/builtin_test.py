@@ -3,10 +3,9 @@ import tempfile
 import shutil
 import unittest
 
-from pysh.shell.builtin import register_builtin
+import pysh.shell.builtin
 from pysh.shell.evaluator import run
 
-register_builtin()
 
 class TempDir(object):
   def __init__(self):
