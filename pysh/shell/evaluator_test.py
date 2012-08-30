@@ -6,7 +6,7 @@ import unittest
 import pysh.shell
 from pysh.shell.evaluator import DiagnoseIOType
 from pysh.shell.evaluator import run
-from pysh.shell.pycmd import register_pycmd
+from pysh.shell.pycmd import register_pycmd, IOType, PyCmd
 from pysh.shell.parser import Parser
 from pysh.shell.tokenizer import Tokenizer
 
@@ -53,7 +53,7 @@ class DiagnoseIOTypeTest(unittest.TestCase):
     self.assertTrue(error)
 
 
-def PyCmd(args, input):
+def PyCmdExample(args, input):
   for arg in args:
     yield arg
   if not input:
@@ -61,7 +61,7 @@ def PyCmd(args, input):
   for line in input:
     yield line.rstrip('\n')
 
-register_pycmd('pycmd', PyCmd)
+register_pycmd('pycmd', PyCmdExample)
 
 class TempDir(object):
   def __init__(self):
@@ -329,6 +329,68 @@ class RunTest(unittest.TestCase):
         globals(), locals())
     self.assertEquals('pycmd\na\npycmd\n1\n2\nfoo\nbar\nb\n',
                       file('out.txt').read())
+
+  def testPyCmdNoInputWithNative(self):
+    def tmp(args, input):
+      return ['bar']
+    tmp = PyCmd(tmp, '', inType=IOType.No)
+    run('(echo foo && $tmp) | cat > out.txt', globals(), locals())
+    self.assertEquals('foo\nbar\n',
+                      file('out.txt').read())
+
+  def testPyCmdNoInputWithPycmd(self):
+    def tmp(args, input):
+      return ['bar']
+    def pycmd(args, input):
+      return ['foo']
+    tmp = PyCmd(tmp, '', inType=IOType.No)
+    run('($pycmd && $tmp) | cat > out.txt', globals(), locals())
+    self.assertEquals('foo\nbar\n', file('out.txt').read())
+  
+  def testPyCmdNoInput_inputNone(self):
+    def tmp(args, input):
+      return [str(input)]
+    tmp = PyCmd(tmp, '', inType=IOType.No)
+    run('$tmp > out.txt', globals(), locals())
+    self.assertEquals('None\n', file('out.txt').read())
+
+  def testPyCmdNoInput_outputIgnored(self):
+    def tmp(args, input):
+      return ['foo']
+    tmp = PyCmd(tmp, '', inType=IOType.No, outType=IOType.No)
+    response = run('$tmp > out.txt -> rc', globals(), locals())
+    self.assertEquals('', file('out.txt').read())
+    self.assertTrue(response['rc'] != 0)
+
+  def testPyCmdFileOutput(self):
+    def tmp(args, input):
+      return [1, 2, 3]
+    def represent(args, input):
+      return (repr(e.rstrip('\r\n')) for e in input)
+    tmp = PyCmd(tmp, '', outType=IOType.File)
+    run('$tmp | $represent > out.txt', globals(), locals())
+    # Outputs of pycmd with IOType.File is converted to file stream.
+    self.assertEquals('\'1\'\n\'2\'\n\'3\'\n', file('out.txt').read())
+
+  def testPyCmdPipeBothOutput(self):
+    def tmp0(args, input):
+      return [1, 2, 3]
+    def tmp1(args, input):
+      return [4, 5, 6]
+    def represent(args, input):
+      return (repr(e.rstrip('\r\n')) for e in input)
+    tmp0 = PyCmd(tmp0, '', outType=IOType.File)
+    run('($tmp0 && $tmp1) | cat > out.txt', globals(), locals())
+    self.assertEquals('1\n2\n3\n4\n5\n6\n', file('out.txt').read())
+
+  def testPyCmdFileInput(self):
+    def tmp(args, input):
+      return [1, 2, 3]
+    def represent(args, input):
+      return (repr(e.rstrip('\r\n')) for e in input)
+    represent = PyCmd(represent, '', inType=IOType.File)
+    run('$tmp | $represent > out.txt', globals(), locals())
+    self.assertEquals('\'1\'\n\'2\'\n\'3\'\n', file('out.txt').read())
 
 
 if __name__ == '__main__':

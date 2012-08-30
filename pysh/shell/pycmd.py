@@ -15,15 +15,23 @@ def get_pycmd(name):
 
 
 class PyCmd(object):
-    def __init__(self, body, name):
+    def __init__(self, body, name, inType=None, outType=None):
         self.__body = body
         self.__name = name
+        self.__inType = inType
+        self.__outType = outType
 
     def __call__(self, *args, **kwds):
         return self.__body(*args, **kwds)
 
     def name(self):
         return self.__name
+
+    def inType(self):
+        return self.__inType
+
+    def outType(self):
+        return self.__outType
 
 
 def pycmd(*args, **kwds):
@@ -46,3 +54,8 @@ def pycmd(*args, **kwds):
         return register
     else:
         raise Exception('Wrong params')
+
+class IOType(object):
+    Python = 1
+    File = 2
+    No = 3

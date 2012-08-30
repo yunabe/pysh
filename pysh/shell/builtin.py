@@ -5,13 +5,14 @@ import StringIO
 
 from pysh.shell.pycmd import register_pycmd
 from pysh.shell.pycmd import pycmd
+from pysh.shell.pycmd import IOType
 
 
 def file_to_array(f):
   return map(lambda line: line.rstrip('\r\n'), f.readlines())
 
 
-@pycmd(name='echo')
+@pycmd(name='echo', inType=IOType.No)
 def pycmd_echo(args, input):
   line = []
   for arg in args[1:]:
@@ -65,7 +66,7 @@ def pycmd_readcsv(args, input):
   return csv.reader(input)
 
 
-@pycmd(name='cd')
+@pycmd(name='cd', inType=IOType.No, outType=IOType.No)
 def pycmd_cd(args, input):
   assert len(args) == 2 or len(args) == 1
   if len(args) == 2:

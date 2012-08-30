@@ -31,6 +31,7 @@ from pysh.shell.parser import Parser
 from pysh.shell.parser import Process
 from pysh.shell.parser import BinaryOp
 from pysh.shell.pycmd import get_pycmd
+from pysh.shell.pycmd import IOType
 from pysh.shell.tokenizer import Tokenizer
 from pysh.shell.task_manager import Runner
 
@@ -75,78 +76,129 @@ def GetArg0Name(tok, vardict):
   return value
 
 
-def IsPyCmd(proc, vardict):
+def GetProcIOType(proc, vardict):
+  # returns is_pycmd, inType, outType
   arg0 = proc.args[0]
   if len(arg0) != 1:
-    return False
+    return False, 'ST', 'ST'
   name = GetArg0Name(arg0[0], vardict)
   pycmd = get_pycmd(name)
-  return not not pycmd
+  if not pycmd:
+    return False, 'ST', 'ST'
+
+  inType, outType = 'PY', 'PY'
+  if hasattr(pycmd, 'inType'):
+    if pycmd.inType() == IOType.File:
+      inType = 'ST'
+    elif pycmd.inType() == IOType.No:
+      inType = 'NO'
+  if hasattr(pycmd, 'outType'):
+    if pycmd.outType() == IOType.File:
+      outType = 'ST'
+    elif pycmd.outType() == IOType.No:
+      outType = 'NO'
+  return True, inType, outType
+
+
+def MergeIOType(x, y):
+  if x == y:
+    return x
+  if x == 'NO' or y == 'NO':
+    return x if y == 'NO' else y
+  return 'MIX'
+
+
+def IsFileTypeIO(iotype):
+  return iotype == 'ST' or iotype == 'MIX'
 
 
 def DiagnoseIOType(ast, vardict):
-  DiagnoseIOTypeInternal(ast, vardict)
-  if ast.inType == 'ST' and ast.outType == 'ST':
+  ast = DiagnoseIOTypeInternal(ast, vardict)
+  if IsFileTypeIO(ast.inType) and IsFileTypeIO(ast.outType):
     # should be tested in evaluator_test.py
     return ast
   else:
-    return NativeToPy(ast, ast.inType == 'PY', ast.outType == 'PY')
+    return NativeToPy(
+      ast, not IsFileTypeIO(ast.inType), not IsFileTypeIO(ast.outType))
 
 
 # Maybe, we don't need outType.
 def DiagnoseIOTypeInternal(ast, vardict):
   if isinstance(ast, Process):
-    DiagnoseProcessIOType(ast, vardict)
+    return DiagnoseProcessIOType(ast, vardict)
   elif isinstance(ast, Assign):
-    DiagnoseIOTypeInternal(ast.cmd, vardict)
+    ast.cmd = DiagnoseIOTypeInternal(ast.cmd, vardict)
     ast.inType = ast.cmd.inType
     ast.outType = ast.cmd.outType
+    return ast
   else:
     assert isinstance(ast, BinaryOp)
-    DiagnoseIOTypeInternal(ast.left, vardict)
-    DiagnoseIOTypeInternal(ast.right, vardict)
+    ast.left = DiagnoseIOTypeInternal(ast.left, vardict)
+    ast.right = DiagnoseIOTypeInternal(ast.right, vardict)
     if ast.op == '|':
       ast.inType = ast.left.inType
       ast.outType = ast.right.outType
-      if ast.left.outType != ast.right.inType:
-        if ast.left.outType == 'PY':
-          ast.left = NativeToPy(ast.left, False, True)
-          ast.left.inType = ast.inType
-          ast.left.outType = 'ST'
-        else:
-          ast.right = NativeToPy(ast.right, True, False)
-          ast.right.inType = 'ST'
-          ast.right.outType = ast.outType
+      if ast.left.outType == 'MIX' and ast.right.inType == 'PY':
+        raise Exception('Can not pipe combination of python outputs and '
+                        'file outputs to commands that read python data.')
+      if not IsFileTypeIO(ast.left.outType) and IsFileTypeIO(ast.right.inType):
+        ast.left = NativeToPy(ast.left, False, True)
+        ast.left.inType = ast.inType
+        ast.left.outType = 'ST'
+      if IsFileTypeIO(ast.left.outType) and not IsFileTypeIO(ast.right.inType):
+        ast.right = NativeToPy(ast.right, True, False)
+        ast.right.inType = 'ST'
+        ast.right.outType = ast.outType
     else:
-      if ast.left.inType != ast.right.inType:
+      inMerged = MergeIOType(ast.left.inType, ast.right.inType)
+      outMerged = MergeIOType(ast.left.outType, ast.right.outType)
+      if inMerged == 'MIX':
         raise Exception('Can not combile cmd that reads python object and '
                         'cmd that reads file stream.')
-      ast.inType = ast.left.inType
-      if ast.left.outType == ast.right.outType:
-        ast.outType = ast.left.outType
-      else:
-        ast.outType = 'MIX'
-        raise Exception('Not supported.')
+      ast.inType = inMerged
+      ast.outType = outMerged
+      left_in_wrap = False
+      right_in_wrap = False
+      if IsFileTypeIO(ast.inType):
+        if not IsFileTypeIO(ast.left.inType):
+          left_in_wrap = True
+        if not IsFileTypeIO(ast.right.inType):
+          right_in_wrap = True
+      left_out_wrap = False
+      right_out_wrap = False
+      if IsFileTypeIO(ast.outType):
+        if not IsFileTypeIO(ast.left.outType):
+          left_out_wrap = True
+        if not IsFileTypeIO(ast.right.outType):
+          right_out_wrap = True
+      if left_in_wrap or left_out_wrap:
+        ast.left = NativeToPy(ast.left, left_in_wrap, left_out_wrap)
+      if right_in_wrap or right_out_wrap:
+        ast.right = NativeToPy(ast.right, right_in_wrap, right_out_wrap)
+
+    return ast
 
 
 def DiagnoseProcessIOType(proc, vardict):
-  is_pycmd = IsPyCmd(proc, vardict)
-  if is_pycmd:
-    proc.inType = 'PY'
-    proc.outType = 'PY'
-  else:
-    proc.inType = 'ST'
-    proc.outType = 'ST'
+  is_pycmd, proc.inType, proc.outType = GetProcIOType(proc, vardict)
   for arg in proc.args:
     for i, (tok, ast) in enumerate(arg):
       if tok != 'bquote':
         continue
-      DiagnoseIOTypeInternal(ast, vardict)
-      if ast.inType != proc.inType:
+      ast = DiagnoseIOTypeInternal(ast, vardict)
+      if MergeIOType(ast.inType,  proc.inType) == 'MIX':
         raise Exception('Can not combile cmd that reads python object and '
                         'cmd that reads file stream.')
       if ast.outType == 'PY':
         arg[i] = (tok, NativeToPy(ast, False, True))
+      else:
+        arg[i] = (tok, ast)
+  if is_pycmd and (proc.inType == 'ST' or proc.outType == 'ST'):
+    original_proc = proc
+    proc = NativeToPy(proc, proc.inType == 'ST', proc.outType == 'ST')
+    proc.inType = original_proc.inType
+    proc.outType = original_proc.outType
+  return proc
 
 
 class VarDict(dict):
@@ -242,6 +294,8 @@ class TaskArg(object):
       mode = 'w'
     else:
       raise Exception('Unknown file descriptor: ' + str(fd))
+    if fd in self.files:
+      return self.files[fd]
     f = os.fdopen(fd, mode)
     self.files[fd] = f
     return f
@@ -284,11 +338,11 @@ class EvalAstTask(object):
     elif isinstance(ast, NativeToPy):
       cont.call(NativeToPyTask(self.__arg, self.__pipefd, ast), 'wait')
     else:
-      raise Exception('Unexpected ast')
+      raise Exception('Unexpected ast: ', ast)
 
   def invokePipeTask(self, cont, left, right):
-    assert left.outType == right.inType
-    if left.outType == 'PY':
+    assert IsFileTypeIO(left.outType) == IsFileTypeIO(right.inType)
+    if not IsFileTypeIO(left.outType):
       cont.call(PipePyToPyTask(self.__arg, self.__pipefd, left, right), 'wait')
     else:
       cont.call(PipeNativeToNativeTask(self.__arg, self.__pipefd, left, right),
@@ -709,9 +763,15 @@ class EvalProcessTask(object):
     cont.done(response)
 
   def processPyCmd(self, cont, pycmd, args, stdin):
+    if hasattr(pycmd, 'inType') and pycmd.inType() == IOType.No:
+      stdin = None
+    no_output = hasattr(pycmd, 'outType') and pycmd.outType() == IOType.No
     try:
       for e in pycmd(args, stdin):
-        yield e
+        if no_output:
+          raise Exception('A pycmd with [outType= No] outputs something.')
+        else:
+          yield e
       rc = 0
     except Exception, e:
       print >> sys.stderr, e
