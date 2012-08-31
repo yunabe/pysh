@@ -4,6 +4,7 @@ import functools
 import glob
 import os
 import re
+import StringIO
 import sys
 import threading
 
@@ -223,7 +224,8 @@ class PipeFd(object):
 
 
 class PyPipe(object):
-  def __init__(self):
+  def __init__(self, reader_type):
+    self.__reader_type = reader_type
     self.__generators = collections.deque()
     self.__close = False
     self.__cond = threading.Condition()
@@ -233,6 +235,9 @@ class PyPipe(object):
     self.__generators.append(generator)
     self.__cond.notify()
     self.__cond.release()
+
+  def reader_type(self):
+    return self.__reader_type
 
   def close(self):
     self.__cond.acquire()
@@ -475,7 +480,7 @@ class NativeToPyTask(object):
     if self.__ast.input:
       new_r = self.__arg.tofile(self.__pipefd.stdin)
     if self.__ast.output:
-      new_w = PyPipe()
+      new_w = PyPipe('ST')
       self.__write_th = WriteThread(new_w,
                                     self.__arg.tofile(self.__pipefd.stdout))
       self.__write_th.start()
@@ -522,7 +527,7 @@ class PipePyToPyTask(object):
     self.__right = right
 
   def start(self, cont):
-    self.__pypipe = PyPipe()
+    self.__pypipe = PyPipe('PY')
     cont.call(EvalAstTask(self.__arg,
                           PipeFd(self.__pipefd, None, self.__pypipe),
                           self.__left),
@@ -762,16 +767,22 @@ class EvalProcessTask(object):
       self.__arg.close(r)
     cont.done(response)
 
-  def processPyCmd(self, cont, pycmd, args, stdin):
+  def processPyCmd(self, cont, pycmd, args, stdin, reader_type):
     if hasattr(pycmd, 'inType') and pycmd.inType() == IOType.No:
       stdin = None
     no_output = hasattr(pycmd, 'outType') and pycmd.outType() == IOType.No
     try:
-      for e in pycmd(args, stdin):
-        if no_output:
-          raise Exception('A pycmd with [outType= No] outputs something.')
-        else:
-          yield e
+      output = pycmd(args, stdin)
+      if reader_type == 'ST' and hasattr(output, 'pretty_print'):
+        io = StringIO.StringIO()
+        output.pretty_print(io)
+        yield io.getvalue().rstrip('\r\n')
+      else:
+        for e in output:
+          if no_output:
+            raise Exception('A pycmd with [outType= No] outputs something.')
+          else:
+            yield e
       rc = 0
     except Exception, e:
       print >> sys.stderr, e
@@ -806,6 +817,13 @@ class EvalProcessTask(object):
         cont.call(EvalArgTask(self.__arg, self.__pipefd, redirect[2]),
                   (('evalredirect', i, redirect)))
 
+  def invokeCmd(self, cont):
+    cmd = self.__proc.cmd
+    redirects = self.__evaled_redirects
+    if cmd.outType == 'PY':
+      pass
+
+
   def invokeProcess(self, cont):
     proc = self.__proc
     args = []
@@ -827,7 +845,7 @@ class EvalProcessTask(object):
             mode = 'w'  # >
           self.__pycmd_redirect_out = self.__arg.filew(redirect[3], mode)
           self.__pycmd_redirect_th = WritePyCmdRedirectThread(
-            self.processPyCmd(cont, pycmd, args, self.__pipefd.stdin),
+            self.processPyCmd(cont, pycmd, args, self.__pipefd.stdin, 'ST'),
             self.__pycmd_redirect_out)
           self.__pycmd_redirect_th.start()
         else:
@@ -835,7 +853,7 @@ class EvalProcessTask(object):
           pyout_list = []
           self.__arg.rc[redirect[3]] = pyout_list
           self.__pycmd_redirect_th = WritePyCmdRedirectPyOutThread(
-            self.processPyCmd(cont, pycmd, args, self.__pipefd.stdin),
+            self.processPyCmd(cont, pycmd, args, self.__pipefd.stdin, 'PY'),
             pyout_list)
           self.__pycmd_redirect_th.start()
       else:
@@ -843,7 +861,8 @@ class EvalProcessTask(object):
           raise Exception('Bug')
         else:
           self.__pipefd.stdout.add_generator(
-            self.processPyCmd(cont, pycmd, args, self.__pipefd.stdin))
+            self.processPyCmd(cont, pycmd, args, self.__pipefd.stdin,
+                              self.__pipefd.stdout.reader_type()))
       return
 
     pyout_ws = set()

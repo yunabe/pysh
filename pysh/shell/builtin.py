@@ -1,16 +1,24 @@
 import collections
 import csv
 import os
+import pwd
 import StringIO
 
 from pysh.shell.pycmd import register_pycmd
 from pysh.shell.pycmd import pycmd
 from pysh.shell.pycmd import IOType
-
+from pysh.shell.table import Table
 
 def file_to_array(f):
   return map(lambda line: line.rstrip('\r\n'), f.readlines())
 
+
+class Permission(int):
+  def __init__(self, val):
+    int.__init__(self, val)
+
+  def __str__(self):
+    return "%o" % self
 
 @pycmd(name='echo', inType=IOType.No)
 def pycmd_echo(args, input):
@@ -65,6 +73,23 @@ def pycmd_reduce(args, input):
 def pycmd_readcsv(args, input):
   return csv.reader(input)
 
+@pycmd(name='pyls')
+def pycmd_pls(args, input):
+  table = Table(['mode', 'user', 'group', 'path'])
+  for arg in args[1:]:
+    stat = os.stat(arg)
+    user = pwd.getpwuid(stat.st_uid).pw_name
+    group = pwd.getpwuid(stat.st_gid).pw_name
+    permission = stat.st_mode & 0777
+    table.add_row([Permission(permission), user, group, arg])
+  return table
+
+@pycmd(name='where')
+def pycmd_pls(args, input):
+  assert len(args) == 2
+  row = list(input)[0]
+  table = row.table()
+  return table.where(args[1])
 
 @pycmd(name='cd', inType=IOType.No, outType=IOType.No)
 def pycmd_cd(args, input):
