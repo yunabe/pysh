@@ -104,6 +104,15 @@ def pycmd_pls(args, input):
   table = row.table()
   return table.where(args[1])
 
+
+@pycmd(name='orderby')
+def pycmd_pls(args, input):
+  assert len(args) == 2
+  row = list(input)[0]
+  table = row.table()
+  return table.orderby(args[1])
+
+
 @pycmd(name='cd', inType=IOType.No, outType=IOType.No)
 def pycmd_cd(args, input):
   assert len(args) == 2 or len(args) == 1
