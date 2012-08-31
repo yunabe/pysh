@@ -18,7 +18,20 @@ class Permission(int):
     int.__init__(self, val)
 
   def __str__(self):
-    return "%o" % self
+    return ''.join((self.__to_rwx(self >> 6),
+                    self.__to_rwx(self >> 3),
+                    self.__to_rwx(self >> 0)))
+                   
+  def __to_rwx(self,  rwx):
+    result = ['-'] * 3
+    if rwx & (1 << 2):
+      result[0] = 'r'
+    if rwx & (1 << 1):
+      result[1] = 'w'
+    if rwx & (1 << 0):
+      result[2] = 'x'
+    return ''.join(result)
+
 
 @pycmd(name='echo', inType=IOType.No)
 def pycmd_echo(args, input):
