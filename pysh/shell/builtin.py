@@ -1,5 +1,6 @@
 import collections
 import csv
+import datetime
 import os
 import pwd
 import StringIO
@@ -88,14 +89,17 @@ def pycmd_readcsv(args, input):
 
 @pycmd(name='pyls')
 def pycmd_pls(args, input):
-  table = Table(['mode', 'user', 'group', 'path'])
+  table = Table(['mode', 'user', 'group', 'mtime', 'atime', 'path'])
   for arg in args[1:]:
     stat = os.stat(arg)
     user = pwd.getpwuid(stat.st_uid).pw_name
     group = pwd.getpwuid(stat.st_gid).pw_name
     permission = stat.st_mode & 0777
-    table.add_row([Permission(permission), user, group, arg])
+    mtime = datetime.datetime.fromtimestamp(stat.st_mtime)
+    atime = datetime.datetime.fromtimestamp(stat.st_atime)
+    table.add_row([Permission(permission), user, group, mtime, atime, arg])
   return table
+
 
 @pycmd(name='where')
 def pycmd_pls(args, input):
