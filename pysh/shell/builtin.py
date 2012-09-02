@@ -111,10 +111,17 @@ def pycmd_pls(args, input):
 
 @pycmd(name='orderby')
 def pycmd_pls(args, input):
-  assert len(args) == 2
+  assert len(args) == 2 or len(args) == 3
   row = list(input)[0]
   table = row.table()
-  return table.orderby(args[1])
+  asc = True
+  if len(args) == 3:
+    args2 = args[2].lower()
+    if args2 == 'desc':
+      asc = False
+    elif args2 != 'asc':
+      raise Exception('args[2] must be desc or asc.')
+  return table.orderby(args[1], asc)
 
 
 @pycmd(name='cd', inType=IOType.No, outType=IOType.No)
