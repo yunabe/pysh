@@ -2,6 +2,7 @@ import collections
 import csv
 import datetime
 import os
+import stat
 import pwd
 import StringIO
 
@@ -89,15 +90,29 @@ def pycmd_readcsv(args, input):
 
 @pycmd(name='pyls')
 def pycmd_pls(args, input):
-  table = Table(['mode', 'user', 'group', 'mtime', 'atime', 'path'])
+  table = Table(['type', 'mode', 'user', 'group', 'mtime', 'atime', 'path'])
   for arg in args[1:]:
-    stat = os.stat(arg)
-    user = pwd.getpwuid(stat.st_uid).pw_name
-    group = pwd.getpwuid(stat.st_gid).pw_name
-    permission = stat.st_mode & 0777
-    mtime = datetime.datetime.fromtimestamp(stat.st_mtime)
-    atime = datetime.datetime.fromtimestamp(stat.st_atime)
-    table.add_row([Permission(permission), user, group, mtime, atime, arg])
+    file_stat = os.lstat(arg)
+    file_type = '?'
+    if stat.S_ISDIR(file_stat.st_mode):
+      file_type = 'd'
+    if stat.S_ISLNK(file_stat.st_mode):
+      file_type = 'l'
+    if stat.S_ISSOCK(file_stat.st_mode):
+      file_type = 's'
+    if stat.S_ISFIFO(file_stat.st_mode):
+      file_type = 'p'
+    if stat.S_ISCHR(file_stat.st_mode):
+      file_type = 'c'
+    if stat.S_ISREG(file_stat.st_mode):
+      file_type = '-'
+    user = pwd.getpwuid(file_stat.st_uid).pw_name
+    group = pwd.getpwuid(file_stat.st_gid).pw_name
+    permission = file_stat.st_mode & 0777
+    mtime = datetime.datetime.fromtimestamp(int(file_stat.st_mtime))
+    atime = datetime.datetime.fromtimestamp(int(file_stat.st_atime))
+    table.add_row([file_type, Permission(permission),
+                   user, group, mtime, atime, arg])
   return table
 
 
