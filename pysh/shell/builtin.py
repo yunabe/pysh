@@ -89,31 +89,44 @@ def pycmd_reduce(args, input):
 def pycmd_readcsv(args, input):
   return csv.reader(input)
 
+
+def pyls_add_row(path, stats, table):
+  file_type = '?'
+  if stat.S_ISDIR(stats.st_mode):
+    file_type = 'd'
+  if stat.S_ISLNK(stats.st_mode):
+    file_type = 'l'
+  if stat.S_ISSOCK(stats.st_mode):
+    file_type = 's'
+  if stat.S_ISFIFO(stats.st_mode):
+    file_type = 'p'
+  if stat.S_ISCHR(stats.st_mode):
+    file_type = 'c'
+  if stat.S_ISREG(stats.st_mode):
+    file_type = '-'
+  user = pwd.getpwuid(stats.st_uid).pw_name
+  group = grp.getgrgid(stats.st_gid).gr_name
+  permission = stats.st_mode & 0777
+  mtime = datetime.datetime.fromtimestamp(int(stats.st_mtime))
+  atime = datetime.datetime.fromtimestamp(int(stats.st_atime))
+  table.add_row([file_type, Permission(permission),
+                 user, group, mtime, atime, path])
+
+
 @pycmd(name='pyls')
-def pycmd_pls(args, input):
+def pycmd_pyls(args, input):
   table = Table(['type', 'mode', 'user', 'group', 'mtime', 'atime', 'path'])
   for arg in args[1:]:
-    file_stat = os.lstat(arg)
-    file_type = '?'
-    if stat.S_ISDIR(file_stat.st_mode):
-      file_type = 'd'
-    if stat.S_ISLNK(file_stat.st_mode):
-      file_type = 'l'
-    if stat.S_ISSOCK(file_stat.st_mode):
-      file_type = 's'
-    if stat.S_ISFIFO(file_stat.st_mode):
-      file_type = 'p'
-    if stat.S_ISCHR(file_stat.st_mode):
-      file_type = 'c'
-    if stat.S_ISREG(file_stat.st_mode):
-      file_type = '-'
-    user = pwd.getpwuid(file_stat.st_uid).pw_name
-    group = grp.getgrgid(file_stat.st_gid).gr_name
-    permission = file_stat.st_mode & 0777
-    mtime = datetime.datetime.fromtimestamp(int(file_stat.st_mtime))
-    atime = datetime.datetime.fromtimestamp(int(file_stat.st_atime))
-    table.add_row([file_type, Permission(permission),
-                   user, group, mtime, atime, arg])
+    stats = os.lstat(arg)
+    if stat.S_ISDIR(stats.st_mode):
+      names = os.listdir(arg)
+      names = filter(lambda name: not name.startswith('.'), names)
+      for name in names:
+        joined = os.path.join(arg, name)
+        stats = os.lstat(joined)
+        pyls_add_row(joined, stats, table)
+    else:
+      pyls_add_row(arg, stats, table)
   return table
 
 
