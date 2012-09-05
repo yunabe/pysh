@@ -1,6 +1,7 @@
 import collections
 import csv
 import datetime
+import grp
 import os
 import stat
 import pwd
@@ -107,7 +108,7 @@ def pycmd_pls(args, input):
     if stat.S_ISREG(file_stat.st_mode):
       file_type = '-'
     user = pwd.getpwuid(file_stat.st_uid).pw_name
-    group = pwd.getpwuid(file_stat.st_gid).pw_name
+    group = grp.getgrgid(file_stat.st_gid).gr_name
     permission = file_stat.st_mode & 0777
     mtime = datetime.datetime.fromtimestamp(int(file_stat.st_mtime))
     atime = datetime.datetime.fromtimestamp(int(file_stat.st_atime))
