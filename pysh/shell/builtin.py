@@ -85,14 +85,6 @@ def pycmd_reduce(args, input):
   return [reduce(f, input)]
 
 
-@pycmd(name='readcsv')
-def pycmd_readcsv(args, input):
-  return csv.reader(input)
-
-
-def pycmd_tocsv(args, input):
-  pass
-
 def pyls_add_row(path, stats, table):
   file_type = '?'
   if stat.S_ISDIR(stats.st_mode):
@@ -156,6 +148,30 @@ def pycmd_pls(args, input):
     elif args2 != 'asc':
       raise Exception('args[2] must be desc or asc.')
   return table.orderby(args[1], asc)
+
+
+@pycmd(name='tocsv')
+def pycmd_tocsv(args, input):
+  row = list(input)[0]
+  table = row.table()
+  io = StringIO.StringIO()
+  w = csv.writer(io)
+  w.writerow(table.cols())
+  for row in table:
+    w.writerow(row.values())
+  return io.getvalue().split('\r\n')[:-1]
+
+
+@pycmd(name='fromcsv')
+def pycmd_fromcsv(args, input):
+  reader = csv.reader(input)
+  table = None
+  for row in reader:
+    if not table:
+      table = Table(row)
+    else:
+      table.add_row(row)
+  return table
 
 
 @pycmd(name='cd', inType=IOType.No, outType=IOType.No)
