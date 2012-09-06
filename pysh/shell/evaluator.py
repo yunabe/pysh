@@ -785,7 +785,7 @@ class EvalProcessTask(object):
             yield e
       rc = 0
     except Exception, e:
-      print >> sys.stderr, e
+      print >> sys.stderr, 'Failed:', e
       rc = 1
     self.__arg.condition.acquire()
     self.__arg.write_done.append((cont, 'pycmd_done', rc))
@@ -890,33 +890,33 @@ class EvalProcessTask(object):
         self.__arg.condition.release()
       global_wait_thread.register_callback(pid, process_done_callback)
     else:
-      for fd in self.__arg.all_w:
-        if fd != self.__pipefd.stdout and fd not in pyout_ws:
-          os.close(fd)
-      for fd in self.__arg.all_r:
-        if fd != self.__pipefd.stdin:
-          os.close(fd)
-      if self.__pipefd.stdout:
-        # dup2 does nothing args are same.
-        os.dup2(self.__pipefd.stdout, sys.stdout.fileno())
-      if self.__pipefd.stdin:
-        os.dup2(self.__pipefd.stdin, sys.stdin.fileno())
-      for redirect in redirects:
-        if redirect[2] == 'num':
-          os.dup2(redirect[3], redirect[1])
-        elif redirect[2] == 'pyout':
-          os.dup2(redirect[3], redirect[1])
-        else:
-          if redirect[0]:
-            mode = 'a'  # >>
-          else:
-            mode = 'w'  # >
-          f = file(redirect[3], mode)
-          os.dup2(f.fileno(), redirect[1])
-      str_args = []
-      for arg in args:
-        str_args.extend(self.convertToCmdArgs(arg))
       try:
+        for fd in self.__arg.all_w:
+          if fd != self.__pipefd.stdout and fd not in pyout_ws:
+            os.close(fd)
+        for fd in self.__arg.all_r:
+          if fd != self.__pipefd.stdin:
+            os.close(fd)
+        if self.__pipefd.stdout:
+          # dup2 does nothing args are same.
+          os.dup2(self.__pipefd.stdout, sys.stdout.fileno())
+        if self.__pipefd.stdin:
+          os.dup2(self.__pipefd.stdin, sys.stdin.fileno())
+        for redirect in redirects:
+          if redirect[2] == 'num':
+            os.dup2(redirect[3], redirect[1])
+          elif redirect[2] == 'pyout':
+            os.dup2(redirect[3], redirect[1])
+          else:
+            if redirect[0]:
+              mode = 'a'  # >>
+            else:
+              mode = 'w'  # >
+            f = file(redirect[3], mode)
+            os.dup2(f.fileno(), redirect[1])
+        str_args = []
+        for arg in args:
+          str_args.extend(self.convertToCmdArgs(arg))
         os.execvp(str_args[0], str_args)
       except Exception, e:
         print >> sys.stderr, e
