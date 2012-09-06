@@ -132,4 +132,4 @@ The output is stored to Python variable as list
 ## Backquote
 You can use backquote to use results of commands as command arguments.
 
-    > echo `3 + 4`  # 7
+    > echo `expr 3 + 4`  # 7
