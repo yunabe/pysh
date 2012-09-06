@@ -90,19 +90,24 @@ def pycmd_readcsv(args, input):
   return csv.reader(input)
 
 
+def pycmd_tocsv(args, input):
+  pass
+
 def pyls_add_row(path, stats, table):
   file_type = '?'
   if stat.S_ISDIR(stats.st_mode):
     file_type = 'd'
-  if stat.S_ISLNK(stats.st_mode):
+  elif stat.S_ISBLK(stats.st_mode):
+    file_type = 'b'
+  elif stat.S_ISLNK(stats.st_mode):
     file_type = 'l'
-  if stat.S_ISSOCK(stats.st_mode):
+  elif stat.S_ISSOCK(stats.st_mode):
     file_type = 's'
-  if stat.S_ISFIFO(stats.st_mode):
+  elif stat.S_ISFIFO(stats.st_mode):
     file_type = 'p'
-  if stat.S_ISCHR(stats.st_mode):
+  elif stat.S_ISCHR(stats.st_mode):
     file_type = 'c'
-  if stat.S_ISREG(stats.st_mode):
+  elif stat.S_ISREG(stats.st_mode):
     file_type = '-'
   user = pwd.getpwuid(stats.st_uid).pw_name
   group = grp.getgrgid(stats.st_gid).gr_name
