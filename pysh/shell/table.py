@@ -7,6 +7,9 @@ class Table(object):
         for i, col in enumerate(cols):
             self.__col_index[col] = i
 
+    def cols(self):
+        return self.__cols
+
     def __iter__(self):
         return self.__rows.__iter__()
 
