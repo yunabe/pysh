@@ -570,14 +570,29 @@ class PipeNativeToNativeTask(object):
     cont.call(EvalAstTask(self.__arg, PipeFd(self.__pipefd, self.__r, None),
                           self.__right), 'right')
 
+  def __close_r(self):
+    if self.__r is not None:
+      self.__arg.close(self.__r)
+      self.__r = None
+
+  def __close_w(self):
+    if self.__w is not None:
+      self.__arg.close(self.__w)
+      self.__w = None
+
   def resume(self, cont, state, response):
     if state == 'left':
-      self.__arg.close(self.__w)
+      self.__close_w()
     else:
       assert state == 'right'
-      self.__arg.close(self.__r)
+      self.__close_r()
       # it's okay?
       cont.done(response)
+
+  def dispose(self):
+    # close pipe even if error occurrs.
+    self.__close_w()
+    self.__close_r()
 
 
 class AssignTask(object):

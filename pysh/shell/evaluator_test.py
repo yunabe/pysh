@@ -107,6 +107,15 @@ class RunTest(unittest.TestCase):
     run('cat tmp.txt | grep -v b > out.txt', globals(), locals())
     self.assertEquals('a\nc\n', file('out.txt').read())
 
+  def testPipeWithErrorInLeftDoesNotCauseDeadLock(self):
+    error = False
+    try:
+      run('/bin/ls $invalid | /bin/cat', globals(), locals())
+    except Exception, e:
+      self.assertTrue('invalid' in e.message)
+      error = True
+    self.assertTrue(error)
+
   def testVar(self):
     message = 'Hello world.'
     run('echo $message > out.txt', globals(), locals())
