@@ -138,8 +138,11 @@ pyls_option_parser.add_option(
 @pycmd(name='pyls')
 def pycmd_pyls(args, input):
   opt, args = pyls_option_parser.parse_args(args)
+  args = args[1:]
+  if not args:
+    args = [os.getcwd()]
   table = Table(['type', 'mode', 'user', 'group', 'mtime', 'atime', 'path'])
-  for arg in args[1:]:
+  for arg in args:
     stats = os.lstat(arg)
     if stat.S_ISDIR(stats.st_mode) and not opt.dir:
       names = os.listdir(arg)
