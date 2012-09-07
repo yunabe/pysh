@@ -4,8 +4,10 @@ import datetime
 import grp
 import os
 import stat
+import optparse
 import pwd
 import StringIO
+import sys
 
 from pysh.shell.pycmd import register_pycmd
 from pysh.shell.pycmd import pycmd
@@ -14,6 +16,13 @@ from pysh.shell.table import Table
 
 def file_to_array(f):
   return map(lambda line: line.rstrip('\r\n'), f.readlines())
+
+
+class OptionParser(optparse.OptionParser):
+  def exit(self, status=0, msg=None):
+    if msg:
+      sys.stderr.write(msg)
+    raise Exception('OptionParser exit.')
 
 
 class Permission(int):
@@ -85,7 +94,7 @@ def pycmd_reduce(args, input):
   return [reduce(f, input)]
 
 
-def pyls_add_row(path, stats, table):
+def pyls_add_row(path, stats, fulltime, table):
   file_type = '?'
   if stat.S_ISDIR(stats.st_mode):
     file_type = 'd'
@@ -104,26 +113,43 @@ def pyls_add_row(path, stats, table):
   user = pwd.getpwuid(stats.st_uid).pw_name
   group = grp.getgrgid(stats.st_gid).gr_name
   permission = stats.st_mode & 0777
-  mtime = datetime.datetime.fromtimestamp(int(stats.st_mtime))
-  atime = datetime.datetime.fromtimestamp(int(stats.st_atime))
+  st_mtime = stats.st_mtime
+  if not fulltime:
+    st_mtime = int(st_mtime)
+  st_atime = stats.st_atime
+  if not fulltime:
+    st_atime = int(st_atime)
+  mtime = datetime.datetime.fromtimestamp(st_mtime)
+  atime = datetime.datetime.fromtimestamp(st_atime)
   table.add_row([file_type, Permission(permission),
                  user, group, mtime, atime, path])
 
 
+pyls_option_parser = OptionParser()
+pyls_option_parser.add_option(
+  '-d', '--directory', dest='dir', action='store_true',
+  help=('list directory entries instead of contents, and do not '
+        'dereference symbolic links'))
+pyls_option_parser.add_option(
+  '--fulltime', dest='fulltime', action='store_true',
+  help=('like -l --time-style=full-iso'))
+
+
 @pycmd(name='pyls')
 def pycmd_pyls(args, input):
+  opt, args = pyls_option_parser.parse_args(args)
   table = Table(['type', 'mode', 'user', 'group', 'mtime', 'atime', 'path'])
   for arg in args[1:]:
     stats = os.lstat(arg)
-    if stat.S_ISDIR(stats.st_mode):
+    if stat.S_ISDIR(stats.st_mode) and not opt.dir:
       names = os.listdir(arg)
       names = filter(lambda name: not name.startswith('.'), names)
       for name in names:
         joined = os.path.join(arg, name)
         stats = os.lstat(joined)
-        pyls_add_row(joined, stats, table)
+        pyls_add_row(joined, stats, opt.fulltime, table)
     else:
-      pyls_add_row(arg, stats, table)
+      pyls_add_row(arg, stats, opt.fulltime, table)
   return table
 
 
