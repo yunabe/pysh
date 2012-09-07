@@ -794,11 +794,21 @@ class EvalProcessTask(object):
       self.__pycmd_redirect_th.join()
     if self.__pycmd_redirect_out:
       self.__arg.close(self.__pycmd_redirect_out.fileno())
+      self.__pycmd_redirect_out = None
     for th in self.__pyout_thread:
       th.join()
     for r in self.__pyout_rs:
       self.__arg.close(r)
+    self.__pyout_rs = None
     cont.done(response)
+
+  def disepose(self):
+    if self.__pycmd_redirect_out:
+      self.__arg.close(self.__pycmd_redirect_out.fileno())
+      self.__pycmd_redirect_out = None
+    for r in self.__pyout_rs:
+      self.__arg.close(r)
+    self.__pyout_rs = None
 
   def processPyCmd(self, cont, pycmd, args, stdin, reader_type):
     if hasattr(pycmd, 'inType') and pycmd.inType() == IOType.No:
