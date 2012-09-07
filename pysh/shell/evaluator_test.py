@@ -346,6 +346,14 @@ class RunTest(unittest.TestCase):
     run('echo foo > `echo out.txt`', globals(), locals())
     self.assertEquals('foo\n', file('out.txt').read())
 
+  def testErrorInBackQuoteNoDeadLock(self):
+    error = False
+    try:
+      run('echo `echo $invalid`', globals(), locals())
+    except:
+      error = True
+    self.assertTrue(error)
+
   def testPipeInBackQuote(self):
     run('python -c "import sys;print \':\'.join(sys.argv)" '
         '`echo foo bar | cat` > out.txt', globals(), locals())

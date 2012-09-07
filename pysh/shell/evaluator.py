@@ -617,18 +617,20 @@ class EvalArgTask(object):
     self.__pipefd = pipefd
     self.__target = target
     self.__result = [None] * len(self.__target)
+    self.__pipe = [None] * len(self.__target)
     self.__not_ready = set(range(len(self.__target)))
 
   def start(self, cont):
-    self.evalBackquotedCmd(
-      cont, self.__target, self.__arg.globals, self.__arg.locals)
+    self.evalBackquotedCmd(cont, self.__arg.globals, self.__arg.locals)
 
   def resume(self, cont, state, response):
     i = state[0]
     if len(state) == 1:
       self.__result[i] = response
     else:
-      _, out, th, pipe = state
+      _, out, th = state
+      pipe = self.__pipe[i]
+      self.__pipe[i] = None
       self.__arg.close(pipe[1])
       th.join()
       self.__arg.close(pipe[0])
@@ -655,6 +657,13 @@ class EvalArgTask(object):
         result, self.__arg.globals, self.__arg.locals)
     cont.done(reduce(lambda x, y: x + y, new_result))
 
+  def dispose(self):
+    for i, pipe in enumerate(self.__pipe):
+      if pipe:
+        self.__arg.close(pipe[1])
+        self.__arg.close(pipe[0])
+        self.__pipe[i] = None
+
   def evalSubstitution(self, value, globals, locals):
     if value.startswith('${'):
       # remove ${ and }
@@ -674,18 +683,19 @@ class EvalArgTask(object):
     else:
       return self.evalArgGlob(arg, globals, locals)
 
-  def evalBackquotedCmd(self, cont, arg, globals, locals):
-    for i, tok in enumerate(arg):
+  def evalBackquotedCmd(self, cont, globals, locals):
+    for i, tok in enumerate(self.__target):
       if tok[0] == BACKQUOTE:
         ast = tok[1]
-        r, w = self.__arg.ospipe()
+        self.__pipe[i] = self.__arg.ospipe()
+        r, w = self.__pipe[i]
         out = []
         th = WriteToPyOutThread(self.__arg.tofile(r), out)
         th.start()
         cont.call(EvalAstTask(self.__arg,
                               PipeFd(self.__pipefd, None, w),
                               ast),
-                  (i, out, th, (r, w)))
+                  (i, out, th))
       else:
         cont.call(IdentityTask(tok), (i,))
   
