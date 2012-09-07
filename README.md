@@ -15,11 +15,29 @@ command execution, pipe, redirection,
     if not name:
         name = 'world'
     > echo "Hello $name!"
+    
+## Install
+
+    git checkout https://github.com/yunabe/pysh.git
+    ./pysh/bin/pysh
 
 ## pysh command
 ### Run scripts from files
 
-    pysh script.pysh
+    $ pysh script.pysh
+
+Also, you can write pysh script by adding **#!/path/to/pysh**
+(or **/usr/bin/env pysh**) at the top of script files.
+
+    #!/path/to/pysh
+    # hello.sh
+    import os
+    > echo Hello ${os.getlogin()}
+
+Run hello.sh
+
+    $ ./hello.sh
+    Hello yunabe
 
 ### Run scripts from stdin
 
@@ -27,6 +45,16 @@ command execution, pipe, redirection,
     import sys
     > echo ${str(sys.argv[1:])}
     EOF
+
+### Run scripts from command line args
+
+    echo foo bar | pysh -c "`cat << 'EOF'
+    import sys
+    print repr(sys.stdin.read())
+    > echo ${str(sys.argv[1:])}
+    EOF`" arg0 arg1
+    
+This is useful when you define a shell function (e.g. in .bashrc) with pysh.
 
 # Features
 ## Variable
