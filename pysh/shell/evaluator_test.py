@@ -52,6 +52,15 @@ class DiagnoseIOTypeTest(unittest.TestCase):
       error = True
     self.assertTrue(error)
 
+  def testPyCmdWithNativeBackquote(self):
+    def tmp(args, input):
+      pass
+    tmp = PyCmd(tmp, '', inType=IOType.No)
+    ast = self.parse('$tmp `/path/to/cmd`')
+    DiagnoseIOType(ast, {'tmp': tmp})
+    self.assertEquals('ST', ast.inType)
+    self.assertEquals('PY', ast.outType)
+
 
 def PyCmdExample(args, input):
   for arg in args:

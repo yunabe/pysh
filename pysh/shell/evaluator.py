@@ -187,9 +187,11 @@ def DiagnoseProcessIOType(proc, vardict):
       if tok != 'bquote':
         continue
       ast = DiagnoseIOTypeInternal(ast, vardict)
-      if MergeIOType(ast.inType,  proc.inType) == 'MIX':
+      merged_intype = MergeIOType(ast.inType,  proc.inType)
+      if merged_intype == 'MIX':
         raise Exception('Can not combile cmd that reads python object and '
                         'cmd that reads file stream.')
+      proc.inType = merged_intype
       if ast.outType == 'PY':
         arg[i] = (tok, NativeToPy(ast, False, True))
       else:
