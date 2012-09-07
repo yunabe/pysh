@@ -491,10 +491,12 @@ class NativeToPyTask(object):
         self.__ast.ast), 'wait')
 
   def resume(self, cont, state, response):
+    cont.done(response)
+
+  def dispose(self):
     if self.__new_w:
       self.__new_w.close()
       self.__write_th.join()
-    cont.done(response)
 
 
 class SemiAndOrTask(object):

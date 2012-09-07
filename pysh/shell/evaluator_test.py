@@ -192,6 +192,16 @@ class RunTest(unittest.TestCase):
     run('$tmp > out.txt', globals(), locals())
     self.assertEquals('tmp\n19\n', file('out.txt').read())
 
+  def testPyCmdWithErrorDoesNotCauseDeadLock(self):
+    def tmp(args, input):
+      return ['tmp', 19]
+    error = False
+    try:
+      run('$tmp $invalid', globals(), locals())
+    except:
+      error = True
+    self.assertTrue(error)
+
   def testAnd(self):
     run('echo hoge >> out.txt && echo piyo >> out.txt',
         globals(), locals())
