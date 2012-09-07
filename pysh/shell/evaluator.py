@@ -240,6 +240,8 @@ class PyPipe(object):
     return self.__reader_type
 
   def close(self):
+    if self.__close:
+      return
     self.__cond.acquire()
     self.__close = True
     self.__cond.notify()
@@ -546,6 +548,10 @@ class PipePyToPyTask(object):
       assert state == 'right'
       # it's okay?
       cont.done(response)
+
+  def dispose(self):
+    # close pypipe even if error occurrs.
+    self.__pypipe.close()
 
 
 class PipeNativeToNativeTask(object):

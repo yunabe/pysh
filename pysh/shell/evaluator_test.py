@@ -202,6 +202,19 @@ class RunTest(unittest.TestCase):
       error = True
     self.assertTrue(error)
 
+  def testPyCmdWithErrorInPipeDoesNotCauseDeadLock(self):
+    def tmp(args, input):
+      return ['tmp', 19]
+    def reader(args, input):
+      list(input)
+      return []
+    error = False
+    try:
+      run('$tmp $invalid | $reader', globals(), locals())
+    except:
+      error = True
+    self.assertTrue(error)
+
   def testAnd(self):
     run('echo hoge >> out.txt && echo piyo >> out.txt',
         globals(), locals())
