@@ -382,6 +382,13 @@ class RunTest(unittest.TestCase):
     self.assertEquals('pycmd\na\npycmd\n1\n2\nfoo\nbar\nb\n',
                       file('out.txt').read())
 
+  def testPyCmdAndNativeBackquote(self):
+    def tmp(args, input):
+      return args
+    tmp = PyCmd(tmp, '', inType=IOType.No)
+    run('$tmp `echo foo bar` > out.txt', globals(), locals())
+    self.assertTrue(file('out.txt').read().endswith('\nfoo\nbar\n'))
+
   def testPyCmdNoInputWithNative(self):
     def tmp(args, input):
       return ['bar']

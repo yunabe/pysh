@@ -51,6 +51,7 @@ PYVAR_PATTERN = re.compile(r'^[_a-zA-Z][_a-zA-Z0-9]*$')
 class NativeToPy(object):
   def __init__(self, ast, input, output):
     self.ast = ast
+    # Remove self.input. We don't use this any longer.
     self.input = input
     self.output = output
 
@@ -479,10 +480,7 @@ class NativeToPyTask(object):
     self.__write_th = None
 
   def start(self, cont):
-    new_r = None
     new_w = None
-    if self.__ast.input:
-      new_r = self.__arg.tofile(self.__pipefd.stdin)
     if self.__ast.output:
       new_w = PyPipe('ST')
       self.__write_th = WriteThread(new_w,
@@ -491,7 +489,7 @@ class NativeToPyTask(object):
       self.__new_w = new_w
     cont.call(EvalAstTask(
         self.__arg,
-        PipeFd(self.__pipefd, new_r, new_w),
+        PipeFd(self.__pipefd, None, new_w),
         self.__ast.ast), 'wait')
 
   def resume(self, cont, state, response):
@@ -817,6 +815,8 @@ class EvalProcessTask(object):
   def processPyCmd(self, cont, pycmd, args, stdin, reader_type):
     if hasattr(pycmd, 'inType') and pycmd.inType() == IOType.No:
       stdin = None
+    if type(stdin) is int:
+      stdin = self.__arg.tofile(stdin)
     no_output = hasattr(pycmd, 'outType') and pycmd.outType() == IOType.No
     try:
       output = pycmd(args, stdin)
@@ -904,12 +904,9 @@ class EvalProcessTask(object):
             pyout_list)
           self.__pycmd_redirect_th.start()
       else:
-        if isinstance(self.__pipefd.stdin, int):
-          raise Exception('Bug')
-        else:
-          self.__pipefd.stdout.add_generator(
-            self.processPyCmd(cont, pycmd, args, self.__pipefd.stdin,
-                              self.__pipefd.stdout.reader_type()))
+        self.__pipefd.stdout.add_generator(
+          self.processPyCmd(cont, pycmd, args, self.__pipefd.stdin,
+                            self.__pipefd.stdout.reader_type()))
       return
 
     pyout_ws = set()
