@@ -77,14 +77,6 @@ class BuiltinTest(unittest.TestCase):
              'cat > out.txt', globals(), locals())
     self.assertEquals('foobar\n', file('out.txt').read())
 
-  def testReadCvsCmd(self):
-    run('/bin/echo \'a,b,"c,"\' > in.txt', globals(), locals())
-    run('/bin/echo \'e,"f","""g"""\' >> in.txt', globals(), locals())
-    run('cat in.txt | readcsv |'
-             'map ${lambda row: row[2]} > out.txt',
-             globals(), locals())
-    self.assertEquals('c,\n"g"\n', file('out.txt').read())
-
   def testChangeDir(self):
     rc = run('cd /dev', globals(), locals())
     self.assertEquals('/dev', os.getcwd())
