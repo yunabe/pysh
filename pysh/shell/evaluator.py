@@ -5,6 +5,7 @@ import glob
 import os
 import re
 import StringIO
+import traceback
 import sys
 import threading
 
@@ -832,7 +833,7 @@ class EvalProcessTask(object):
             yield e
       rc = 0
     except Exception, e:
-      print >> sys.stderr, 'Failed:', e
+      traceback.print_exc(file=sys.stderr)
       rc = 1
     self.__arg.condition.acquire()
     self.__arg.write_done.append((cont, 'pycmd_done', rc))
