@@ -679,7 +679,9 @@ class EvalArgTask(object):
                 VarDict(self.__arg.globals, self.__arg.locals), {})
 
   def evalArg(self, arg, globals, locals):
-    assert arg
+    if not arg:
+      # e.g. backquoted command has no output
+      return []
     if not self.hasGlobPattern(arg):
       return self.evalArgNoGlob(arg, globals, locals)
     else:

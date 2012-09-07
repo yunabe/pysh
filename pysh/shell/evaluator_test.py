@@ -339,6 +339,9 @@ class RunTest(unittest.TestCase):
         '`echo foo bar` > out.txt', globals(), locals())
     self.assertEquals('-c:foo:bar\n', file('out.txt').read())
 
+  def testBackQuoteEmptyOutput(self):
+    run('echo `echo`', globals(), locals())
+
   def testBackQuoteWIthPrefixSuffix(self):
     run('python -c "import sys;print \':\'.join(sys.argv)" '
         'hoge`echo foo bar`piyo > out.txt', globals(), locals())
