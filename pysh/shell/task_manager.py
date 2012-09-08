@@ -3,13 +3,32 @@
 
 import threading
 
+
+class IdentityTask(object):
+  def __init__(self, response):
+    self.__response = response
+
+  def start(self, cont):
+    cont.done(self.__response)
+
+
 class Controller(object):
     def __init__(self, runner, task, state, parent):
         self.__runner = runner
         self.__task = task
         self.__state = state
         self.__parent = parent
-    
+        self.__children = {}
+
+    def add_child(self, child):
+        self.__children[id(child)] = child
+
+    def remove_child(self, child):
+        del self.__children[id(child)]
+
+    def children(self):
+        return self.__children.values()
+
     def task(self):
         return self.__task
 
@@ -37,6 +56,7 @@ class Runner(object):
         # tasks is FIFO to run tasks in DFS way.
         # To run tasks in BFS way, use collections.deque.
         self.__tasks = [('call', task, '<init>', None)]
+        self.__root_cont = None
         self.response = None
         self.done = False
         self.__sync_tasks = []
@@ -75,12 +95,15 @@ class Runner(object):
     def sync_push_done(self, callstack, response):
         self.__sync_push_task(('done', response, cont))
 
-    def __handle_exception(self, cont):
-        while cont:
-            task = cont.task()
-            if hasattr(task, 'dispose'):
-                task.dispose()
-            cont = cont.parent()
+    def __handle_exception(self):
+        self.__call_dispose_recursively(self.__root_cont)
+
+    def __call_dispose_recursively(self, cont):
+        for child in cont.children():
+            self.__call_dispose_recursively(child)
+        task = cont.task()
+        if hasattr(task, 'dispose'):
+            task.dispose()
 
     def run_internal(self):
         task = self.__tasks.pop()
@@ -88,10 +111,14 @@ class Runner(object):
         if type == 'call':
             _, f, state, cont = task
             newcont = Controller(self, f, state, cont)
+            if cont:
+                cont.add_child(newcont)
+            else:
+                self.__root_cont = newcont
             try:
                 f.start(newcont)
             except:
-                self.__handle_exception(newcont)
+                self.__handle_exception()
                 raise
         else:
             # 'done'
@@ -103,9 +130,11 @@ class Runner(object):
             if not parentcont:
                 self.response = response
                 self.done = True
+                self.__root_cont = None
             else:
+                parentcont.remove_child(cont)
                 try:
                     parentcont.task().resume(parentcont, cont.state(), response)
                 except:
-                    self.__handle_exception(parentcont)
+                    self.__handle_exception()
                     raise

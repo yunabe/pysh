@@ -619,6 +619,7 @@ class EvalArgTask(object):
     self.__target = target
     self.__result = [None] * len(self.__target)
     self.__pipe = [None] * len(self.__target)
+    self.__thread = [None] * len(self.__target)
     self.__not_ready = set(range(len(self.__target)))
 
   def start(self, cont):
@@ -629,9 +630,11 @@ class EvalArgTask(object):
     if len(state) == 1:
       self.__result[i] = response
     else:
-      _, out, th = state
+      _, out = state
       pipe = self.__pipe[i]
       self.__pipe[i] = None
+      th = self.__thread[i]
+      self.__thread[i] = None
       self.__arg.close(pipe[1])
       th.join()
       self.__arg.close(pipe[0])
@@ -661,9 +664,15 @@ class EvalArgTask(object):
   def dispose(self):
     for i, pipe in enumerate(self.__pipe):
       if pipe:
-        self.__arg.close(pipe[1])
-        self.__arg.close(pipe[0])
+        th = self.__thread[i]
+        assert th
         self.__pipe[i] = None
+        self.__thread[i] = None
+        self.__arg.close(pipe[1])
+        # Need stop the thread before close(pipe[0]) to avoid
+        # IO operation conflict
+        th.join()
+        self.__arg.close(pipe[0])
 
   def evalSubstitution(self, value, globals, locals):
     if value.startswith('${'):
@@ -694,11 +703,12 @@ class EvalArgTask(object):
         r, w = self.__pipe[i]
         out = []
         th = WriteToPyOutThread(self.__arg.tofile(r), out)
+        self.__thread[i] = th
         th.start()
         cont.call(EvalAstTask(self.__arg,
                               PipeFd(self.__pipefd, None, w),
                               ast),
-                  (i, out, th))
+                  (i, out))
       else:
         cont.call(IdentityTask(tok), (i,))
   

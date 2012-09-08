@@ -451,6 +451,18 @@ class RunTest(unittest.TestCase):
     run('$tmp | $represent > out.txt', globals(), locals())
     self.assertEquals('\'1\'\n\'2\'\n\'3\'\n', file('out.txt').read())
 
+  def testNoDeadLock_pipeAndBackquote(self):
+    def tmp(args, input):
+      return []
+    tmp = PyCmd(tmp, '', inType=IOType.No)
+    error = False
+    try:
+      run('$tmp `echo foo` > /invalid/path/1831 | '
+          '$tmp `echo piyo` > /invalid/path/1928', globals(), locals())
+    except IOError:
+      error = True
+    self.assertTrue(error)
+
 
 if __name__ == '__main__':
   unittest.main()
