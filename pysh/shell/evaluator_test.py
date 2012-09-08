@@ -463,6 +463,10 @@ class RunTest(unittest.TestCase):
       error = True
     self.assertTrue(error)
 
+  def testNoDeadLock_pipeRightCommandEarlyReturn(self):
+    # Usually, echo bar exits earlier than echo `echo foo`
+    run('echo `echo foo` | echo bar > /dev/null', globals(), locals())
+
 
 if __name__ == '__main__':
   unittest.main()

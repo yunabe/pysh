@@ -1,6 +1,3 @@
-# Copied from
-# https://github.com/yunabe/practice/blob/master/python/misc/task_manager.py
-
 import threading
 
 
@@ -19,6 +16,7 @@ class Controller(object):
         self.__state = state
         self.__parent = parent
         self.__children = {}
+        self.__disposed = False
 
     def add_child(self, child):
         self.__children[id(child)] = child
@@ -49,6 +47,14 @@ class Controller(object):
 
     def sync_done(self, response):
         self.__runner.sync_push_done(response, self)
+
+    def disposed(self):
+        return self.__disposed
+
+    def _dispose(self):
+        if hasattr(self.__task, 'dispose'):
+            self.__task.dispose()
+        self.__disposed = True
 
 
 class Runner(object):
@@ -101,9 +107,7 @@ class Runner(object):
     def __call_dispose_recursively(self, cont):
         for child in cont.children():
             self.__call_dispose_recursively(child)
-        task = cont.task()
-        if hasattr(task, 'dispose'):
-            task.dispose()
+        cont._dispose()
 
     def run_internal(self):
         task = self.__tasks.pop()
@@ -123,18 +127,18 @@ class Runner(object):
         else:
             # 'done'
             _, response, cont = task
+            self.__call_dispose_recursively(cont)
             parentcont = cont.parent()
-            f = cont.task()
-            if hasattr(f, 'dispose'):
-                f.dispose()
             if not parentcont:
                 self.response = response
                 self.done = True
                 self.__root_cont = None
             else:
                 parentcont.remove_child(cont)
-                try:
-                    parentcont.task().resume(parentcont, cont.state(), response)
-                except:
-                    self.__handle_exception()
-                    raise
+                if not parentcont.disposed():
+                    try:
+                        parentcont.task().resume(
+                            parentcont, cont.state(), response)
+                    except:
+                        self.__handle_exception()
+                        raise
