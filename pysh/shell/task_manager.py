@@ -1,3 +1,6 @@
+# Copied from
+# https://github.com/yunabe/practice/blob/master/python/misc/task_manager.py
+
 import threading
 
 
