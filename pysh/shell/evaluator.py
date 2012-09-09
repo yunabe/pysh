@@ -272,7 +272,7 @@ class PyPipe(object):
 
 
 class TaskArg(object):
-  def __init__(self, rc, pool, write_done, cond, globals, locals):
+  def __init__(self, rc, pool, write_done, cond, after_fork, globals, locals):
     self.rc = rc
     self.pool = pool
     self.all_r = set()
@@ -280,6 +280,7 @@ class TaskArg(object):
     self.files = {}
     self.write_done = write_done
     self.condition = cond
+    self.after_fork = after_fork
     self.globals = globals
     self.locals = locals
 
@@ -938,6 +939,7 @@ class EvalProcessTask(object):
 
     pid = os.fork()
     if pid != 0:
+      self.__arg.after_fork(pid)
       for pyout_w in pyout_ws:
         self.__arg.close(pyout_w)
       def process_done_callback(rc):
@@ -948,6 +950,7 @@ class EvalProcessTask(object):
       global_wait_thread.register_callback(pid, process_done_callback)
     else:
       try:
+        self.__arg.after_fork(0)
         for fd in self.__arg.all_w:
           if fd != self.__pipefd.stdout and fd not in pyout_ws:
             os.close(fd)
@@ -987,7 +990,6 @@ class Evaluator(object):
     self.__rc = {}
 
   def __after_folk(self, pid):
-    # TODO(yunabe): Reimplement __after_folk hook if needed.
     pass
 
   def rc(self):
@@ -1004,7 +1006,9 @@ class Evaluator(object):
     cond = threading.Condition()
     write_done = []
     arg = TaskArg(self.__rc, pool,
-                  write_done, cond, globals, locals)
+                  write_done, cond,
+                  self.__after_folk,
+                  globals, locals)
     runner = Runner(
       EvalAstTask(arg,
                   PipeFd(None, sys.stdin.fileno(), sys.stdout.fileno()),
