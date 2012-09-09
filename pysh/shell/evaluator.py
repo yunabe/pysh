@@ -1024,6 +1024,18 @@ class Evaluator(object):
       runner.run()
 
 
+def start_global_wait_thread():
+  global global_wait_thread
+  if global_wait_thread:
+    return
+  global_wait_thread_lock.acquire()
+  if not global_wait_thread:
+    global_wait_thread = WaitChildThread()
+    global_wait_thread.start()
+    atexit.register(stop_global_wait_thread)
+  global_wait_thread_lock.release()
+
+
 def stop_global_wait_thread():
   assert global_wait_thread
   global_wait_thread.stop()
@@ -1031,14 +1043,7 @@ def stop_global_wait_thread():
 
 
 def run(cmd_str, globals, locals, alias_map=None):
-  global global_wait_thread
-  if not global_wait_thread:
-    global_wait_thread_lock.acquire()
-    if not global_wait_thread:
-      global_wait_thread = WaitChildThread()
-      global_wait_thread.start()
-      atexit.register(stop_global_wait_thread)
-    global_wait_thread_lock.release()
+  start_global_wait_thread()
   tok = Tokenizer(cmd_str, alias_map=alias_map)
   parser = Parser(tok)
   evaluator = Evaluator(parser)
