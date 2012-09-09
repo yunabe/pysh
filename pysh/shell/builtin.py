@@ -46,7 +46,7 @@ class Permission(int):
 
 
 @pycmd(name='echo', inType=IOType.No)
-def pycmd_echo(args, input):
+def pycmd_echo(args, input, options):
   line = []
   for arg in args[1:]:
     if not isinstance(arg, basestring) and (
@@ -63,7 +63,7 @@ def pycmd_echo(args, input):
 
 
 @pycmd(name='map')
-def pycmd_map(args, input):
+def pycmd_map(args, input, options):
   assert len(args) == 2
   if isinstance(input, file):
     input = file_to_array(input)
@@ -73,7 +73,7 @@ def pycmd_map(args, input):
 
 
 @pycmd(name='filter')
-def pycmd_filter(args, input):
+def pycmd_filter(args, input, options):
   assert len(args) == 2
   if isinstance(input, file):
     input = file_to_array(input)
@@ -85,7 +85,7 @@ def pycmd_filter(args, input):
 
 
 @pycmd(name='reduce')
-def pycmd_reduce(args, input):
+def pycmd_reduce(args, input, options):
   assert len(args) == 2
   if isinstance(input, file):
     input = file_to_array(input)
@@ -136,7 +136,7 @@ pyls_option_parser.add_option(
 
 
 @pycmd(name='pyls')
-def pycmd_pyls(args, input):
+def pycmd_pyls(args, input, options):
   opt, args = pyls_option_parser.parse_args(args)
   args = args[1:]
   if not args:
@@ -157,15 +157,15 @@ def pycmd_pyls(args, input):
 
 
 @pycmd(name='where')
-def pycmd_pls(args, input):
+def pycmd_pls(args, input, options):
   assert len(args) == 2
   row = list(input)[0]
   table = row.table()
-  return table.where(args[1])
+  return table.where(args[1], options.globals(), options.locals())
 
 
 @pycmd(name='orderby')
-def pycmd_pls(args, input):
+def pycmd_pls(args, input, options):
   assert len(args) == 2 or len(args) == 3
   row = list(input)[0]
   table = row.table()
@@ -176,11 +176,11 @@ def pycmd_pls(args, input):
       asc = False
     elif args2 != 'asc':
       raise Exception('args[2] must be desc or asc.')
-  return table.orderby(args[1], asc)
+  return table.orderby(args[1], asc, options.globals(), options.locals())
 
 
 @pycmd(name='tocsv')
-def pycmd_tocsv(args, input):
+def pycmd_tocsv(args, input, options):
   row = list(input)[0]
   table = row.table()
   io = StringIO.StringIO()
@@ -192,7 +192,7 @@ def pycmd_tocsv(args, input):
 
 
 @pycmd(name='fromcsv')
-def pycmd_fromcsv(args, input):
+def pycmd_fromcsv(args, input, options):
   reader = csv.reader(input)
   table = None
   for row in reader:
@@ -204,7 +204,7 @@ def pycmd_fromcsv(args, input):
 
 
 @pycmd(name='cd', inType=IOType.No, outType=IOType.No)
-def pycmd_cd(args, input):
+def pycmd_cd(args, input, options):
   assert len(args) == 2 or len(args) == 1
   if len(args) == 2:
     dir = args[1]

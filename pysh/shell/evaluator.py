@@ -34,6 +34,7 @@ from pysh.shell.parser import Process
 from pysh.shell.parser import BinaryOp
 from pysh.shell.pycmd import get_pycmd
 from pysh.shell.pycmd import IOType
+from pysh.shell.pycmd import PyCmdOption
 from pysh.shell.tokenizer import Tokenizer
 from pysh.shell.task_manager import Runner
 
@@ -830,7 +831,8 @@ class EvalProcessTask(object):
       stdin = self.__arg.tofile(stdin)
     no_output = hasattr(pycmd, 'outType') and pycmd.outType() == IOType.No
     try:
-      output = pycmd(args, stdin)
+      output = pycmd(args, stdin,
+                     PyCmdOption(self.__arg.globals, self.__arg.locals))
       if reader_type == 'ST' and hasattr(output, 'pretty_print'):
         io = StringIO.StringIO()
         output.pretty_print(io)

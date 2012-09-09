@@ -53,7 +53,7 @@ class DiagnoseIOTypeTest(unittest.TestCase):
     self.assertTrue(error)
 
   def testPyCmdWithNativeBackquote(self):
-    def tmp(args, input):
+    def tmp(args, input, options):
       pass
     tmp = PyCmd(tmp, '', inType=IOType.No)
     ast = self.parse('$tmp `/path/to/cmd`')
@@ -62,7 +62,7 @@ class DiagnoseIOTypeTest(unittest.TestCase):
     self.assertEquals('PY', ast.outType)
 
 
-def PyCmdExample(args, input):
+def PyCmdExample(args, input, options):
   for arg in args:
     yield arg
   if not input:
@@ -151,7 +151,7 @@ class RunTest(unittest.TestCase):
     self.assertEquals('{3: [22]}\n', file('out.txt').read())
 
   def testListComprehension(self):
-    def tmp(args, input):
+    def tmp(args, input, options):
       return [x * x for x in xrange(3)]
     run('$tmp ${[x * x for x in xrange(3)]} > out.txt',
         globals(), locals())
@@ -205,13 +205,13 @@ class RunTest(unittest.TestCase):
     self.assertEquals('pycmd\nbaz\npycmd\nbar\nfoo\n', file('out.txt').read())
 
   def testPyCmdInVar(self):
-    def tmp(args, input):
+    def tmp(args, input, options):
       return ['tmp', 19]
     run('$tmp > out.txt', globals(), locals())
     self.assertEquals('tmp\n19\n', file('out.txt').read())
 
   def testPyCmdWithErrorDoesNotCauseDeadLock(self):
-    def tmp(args, input):
+    def tmp(args, input, options):
       return ['tmp', 19]
     error = False
     try:
@@ -221,9 +221,9 @@ class RunTest(unittest.TestCase):
     self.assertTrue(error)
 
   def testPyCmdWithErrorInPipeDoesNotCauseDeadLock(self):
-    def tmp(args, input):
+    def tmp(args, input, options):
       return ['tmp', 19]
-    def reader(args, input):
+    def reader(args, input, options):
       list(input)
       return []
     error = False
@@ -264,26 +264,26 @@ class RunTest(unittest.TestCase):
     self.assertEquals('foo\n', file('out.txt').read())
 
   def testAndPyCmd(self):
-    def tmp(args, input):
+    def tmp(args, input, options):
       return ['tmp']
     run('$tmp > out.txt && $tmp >> out.txt', globals(), locals())
     self.assertEquals('tmp\ntmp\n', file('out.txt').read())
 
   def testOrPyCmd(self):
-    def tmp(args, input):
+    def tmp(args, input, options):
       return ['tmp']
     run('$tmp > out.txt || $tmp >> out.txt', globals(), locals())
     self.assertEquals('tmp\n', file('out.txt').read())
 
   def testAndNotPyCmd(self):
-    def tmp(args, input):
+    def tmp(args, input, options):
       yield 'a'
       raise Exception('Error!')
     run('$tmp > out.txt && $tmp >> out.txt', globals(), locals())
     self.assertEquals('a\n', file('out.txt').read())
 
   def testOrNotPyCmd(self):
-    def tmp(args, input):
+    def tmp(args, input, options):
       yield 'a'
       raise Exception('Error!')
     run('$tmp > out.txt || $tmp >> out.txt', globals(), locals())
@@ -383,14 +383,14 @@ class RunTest(unittest.TestCase):
                       file('out.txt').read())
 
   def testPyCmdAndNativeBackquote(self):
-    def tmp(args, input):
+    def tmp(args, input, options):
       return args
     tmp = PyCmd(tmp, '', inType=IOType.No)
     run('$tmp `echo foo bar` > out.txt', globals(), locals())
     self.assertTrue(file('out.txt').read().endswith('\nfoo\nbar\n'))
 
   def testPyCmdNoInputWithNative(self):
-    def tmp(args, input):
+    def tmp(args, input, options):
       return ['bar']
     tmp = PyCmd(tmp, '', inType=IOType.No)
     run('(echo foo && $tmp) | cat > out.txt', globals(), locals())
@@ -398,23 +398,23 @@ class RunTest(unittest.TestCase):
                       file('out.txt').read())
 
   def testPyCmdNoInputWithPycmd(self):
-    def tmp(args, input):
+    def tmp(args, input, options):
       return ['bar']
-    def pycmd(args, input):
+    def pycmd(args, input, options):
       return ['foo']
     tmp = PyCmd(tmp, '', inType=IOType.No)
     run('($pycmd && $tmp) | cat > out.txt', globals(), locals())
     self.assertEquals('foo\nbar\n', file('out.txt').read())
   
   def testPyCmdNoInput_inputNone(self):
-    def tmp(args, input):
+    def tmp(args, input, options):
       return [str(input)]
     tmp = PyCmd(tmp, '', inType=IOType.No)
     run('$tmp > out.txt', globals(), locals())
     self.assertEquals('None\n', file('out.txt').read())
 
   def testPyCmdNoInput_outputIgnored(self):
-    def tmp(args, input):
+    def tmp(args, input, options):
       return ['foo']
     tmp = PyCmd(tmp, '', inType=IOType.No, outType=IOType.No)
     response = run('$tmp > out.txt -> rc', globals(), locals())
@@ -422,9 +422,9 @@ class RunTest(unittest.TestCase):
     self.assertTrue(response['rc'] != 0)
 
   def testPyCmdFileOutput(self):
-    def tmp(args, input):
+    def tmp(args, input, options):
       return [1, 2, 3]
-    def represent(args, input):
+    def represent(args, input, options):
       return (repr(e.rstrip('\r\n')) for e in input)
     tmp = PyCmd(tmp, '', outType=IOType.File)
     run('$tmp | $represent > out.txt', globals(), locals())
@@ -432,27 +432,27 @@ class RunTest(unittest.TestCase):
     self.assertEquals('\'1\'\n\'2\'\n\'3\'\n', file('out.txt').read())
 
   def testPyCmdPipeBothOutput(self):
-    def tmp0(args, input):
+    def tmp0(args, input, options):
       return [1, 2, 3]
-    def tmp1(args, input):
+    def tmp1(args, input, options):
       return [4, 5, 6]
-    def represent(args, input):
+    def represent(args, input, options):
       return (repr(e.rstrip('\r\n')) for e in input)
     tmp0 = PyCmd(tmp0, '', outType=IOType.File)
     run('($tmp0 && $tmp1) | cat > out.txt', globals(), locals())
     self.assertEquals('1\n2\n3\n4\n5\n6\n', file('out.txt').read())
 
   def testPyCmdFileInput(self):
-    def tmp(args, input):
+    def tmp(args, input, options):
       return [1, 2, 3]
-    def represent(args, input):
+    def represent(args, input, options):
       return (repr(e.rstrip('\r\n')) for e in input)
     represent = PyCmd(represent, '', inType=IOType.File)
     run('$tmp | $represent > out.txt', globals(), locals())
     self.assertEquals('\'1\'\n\'2\'\n\'3\'\n', file('out.txt').read())
 
   def testNoDeadLock_pipeAndBackquote(self):
-    def tmp(args, input):
+    def tmp(args, input, options):
       return []
     tmp = PyCmd(tmp, '', inType=IOType.No)
     error = False

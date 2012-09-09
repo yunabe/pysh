@@ -1,4 +1,17 @@
 
+class VarDict(object):
+    def __init__(self, locals, row):
+        self.__row = row
+        self.__locals = locals
+
+    def __getitem__(self, key):
+        if not self.__locals:
+            return self.__row[key]
+        try:
+            return self.__row[key]
+        except KeyError:
+            return self.__locals[key]
+
 class Table(object):
     def __init__(self, cols):
         self.__cols = cols
@@ -46,18 +59,17 @@ class Table(object):
                 writer.write(('%% %ds' % max_width[col]) % str(row[col]))
             writer.write('\n')
 
-
-    def where(self, cond):
+    def where(self, cond, globals=None, locals=None):
         new = Table(self.__cols)
         for row in self.__rows:
-            if eval(cond, None, row):
+            if eval(cond, globals, VarDict(locals, row)):
                 new.add_row(row.values())
         return new
 
-    def orderby(self, order, asc=True):
+    def orderby(self, order, asc=True, globals=None, locals=None):
         orders = []
         for i, row in enumerate(self.__rows):
-            orders.append((eval(order, None, row), i))
+            orders.append((eval(order, globals, VarDict(locals, row)), i))
         if asc:
             comparator = cmp
         else:

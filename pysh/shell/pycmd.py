@@ -13,6 +13,17 @@ def get_pycmd(name):
   else:
     return None
 
+class PyCmdOption(object):
+  def __init__(self, globals, locals):
+    self.__globals = globals
+    self.__locals = locals
+
+  def globals(self):
+    return self.__globals
+
+  def locals(self):
+    return self.__locals
+
 
 class PyCmd(object):
     def __init__(self, body, name, inType=None, outType=None):
