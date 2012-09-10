@@ -60,6 +60,9 @@ class RoughLexer(object):
   def _predict_indent(self, indent):
     pass
 
+  def _predict_shellmode(self, prediction):
+    pass
+
   def read(self):
     self.c = self.reader.read(1)
     return self.c
@@ -173,6 +176,7 @@ class RoughLexer(object):
       raise StopIteration()
     else:
       indent = indent_writer.getvalue()
+      self._predict_shellmode(mode == 'shell')
       self.__predict_next_indent(indent, mode, content_value)
       return indent, mode, content_value
 
