@@ -182,9 +182,10 @@ class RoughLexer(object):
 
 
 class Converter(object):
-  def __init__(self, lexer, writer):
+  def __init__(self, lexer, writer, run_funcname='pysh.shell.runner.run'):
     self.lexer = lexer
     self.writer = writer
+    self.__fun_func_name = run_funcname
 
   def extractResponseNames(self, content):
     parser = Parser(Tokenizer(content))
@@ -222,9 +223,8 @@ class Converter(object):
         names = self.extractResponseNames(content)
         if names:
           self.writer.write(', '.join(names + ['']) + '= ')
-        self.writer.write(
-          'pysh.shell.runner.run(%s, '
-          'locals(), globals(), %s)' % (`content`, `names`))
+        self.writer.write('%s(%s, locals(), globals(), %s)' % (
+            self.__fun_func_name, `content`, `names`))
       self.writer.write('\n')
 
 
