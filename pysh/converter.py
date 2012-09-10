@@ -20,6 +20,9 @@ class RoughLexer(object):
     # Used for indent prediction.
     self.__indent_stack = []
 
+  def __iter__(self):
+    return self
+
   def is_space(self, c):
     return c == ' ' or c == '\t' or c == '\f' or c == '\v'
 
@@ -167,7 +170,7 @@ class RoughLexer(object):
         self.read()
     content_value = content.getvalue()
     if self.c == '' and not content_value:
-      return None, None, None
+      raise StopIteration()
     else:
       indent = indent_writer.getvalue()
       self.__predict_next_indent(indent, mode, content_value)
@@ -175,8 +178,8 @@ class RoughLexer(object):
 
 
 class Converter(object):
-  def __init__(self, reader, writer):
-    self.lexer = RoughLexer(reader)
+  def __init__(self, lexer, writer):
+    self.lexer = lexer
     self.writer = writer
 
   def extractResponseNames(self, content):
@@ -207,16 +210,7 @@ class Converter(object):
     if with_signature:
       self.writer.write(SIGNATURE)
     self.writer.write('import pysh.shell.runner\n')
-    use_existing = False
-    while True:
-      if not use_existing:
-        indent, mode, content = self.lexer.next()
-      else:
-        use_existing = False
-        
-      if indent is None:
-        break
-
+    for indent, mode, content in self.lexer:
       self.writer.write(indent)
       if mode == 'python':
         self.writer.write(content)
@@ -231,4 +225,4 @@ class Converter(object):
 
 
 if __name__ == '__main__':
-  Converter(sys.stdin, sys.stdout).convert(True)
+  Converter(RoughLexer(sys.stdin), sys.stdout).convert(True)

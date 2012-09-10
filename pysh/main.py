@@ -20,7 +20,7 @@ def main():
   if sys.argv[1] == '-':
     reader = sys.stdin
     writer = StringIO.StringIO()
-    Converter(reader, writer).convert(False)
+    Converter(RoughLexer(reader), writer).convert(False)
     argv = sys.argv[2:]
     os.execlp('python', 'python', '-c', writer.getvalue(), *argv)
   elif sys.argv[1] == '-c':
@@ -28,7 +28,7 @@ def main():
       usage_exit()
     reader = StringIO.StringIO(sys.argv[2])
     writer = StringIO.StringIO()
-    Converter(reader, writer).convert(False)
+    Converter(RoughLexer(reader), writer).convert(False)
     argv = sys.argv[3:]
     os.execlp('python', 'python', '-c', writer.getvalue(), *argv)
   else:
@@ -40,7 +40,7 @@ def main():
     py = name + '.py'
     reader = file(script, 'r')
     writer = file(py, 'w')
-    Converter(reader, writer).convert(True)
+    Converter(RoughLexer(reader), writer).convert(True)
     writer.close()
     argv = sys.argv[2:]
     os.execlp('python', 'python', py, *argv)
