@@ -37,13 +37,16 @@ class RoughLexer(object):
       self.__indent_stack.pop()
 
   def __predict_next_indent(self, indent, mode, content):
-    self.__push_indent(indent)
-    if mode == 'python':
-      if content.endswith(':'):
-        self.__push_indent(indent + ' ' * 4)
-      elif (content.startswith('pass') or
-            content.startswith('return')):
-        self.__pop_indent()
+    if len(content) == 0:
+      self.__pop_indent()
+    else:
+      self.__push_indent(indent)
+      if mode == 'python':
+        if content.endswith(':'):
+          self.__push_indent(indent + ' ' * 4)
+        elif (content.startswith('pass') or
+              content.startswith('return')):
+          self.__pop_indent()
 
     if self.__indent_stack:
       prediction = self.__indent_stack[-1][0]
@@ -151,10 +154,10 @@ class RoughLexer(object):
         break
       elif self.c == '\r':
         if self.read() == '\n':
-          self.read() # discard '\n'
+          self.c = None  # discard '\n'
         break
       elif self.c == '\n':
-        self.read() # discard '\n'
+        self.c = None  # discard '\n'
         break
       elif self.c == '\\':
         self.read()

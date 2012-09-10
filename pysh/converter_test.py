@@ -110,6 +110,16 @@ class IndentPredictionTest(unittest.TestCase):
     lexer.next()
     self.assertEquals([' ' * 6], log)
 
+  def testUnindentWithBlankline(self):
+    reader = StringIO.StringIO('  if x:\n    f(x)\n         \n')
+    log = []
+    lexer = RecordPredictionLexer(reader, log)
+    while True:
+      if lexer.next()[0] is None:
+        break
+    self.assertEquals([' ' * 6, ' ' * 4, ' ' * 2], log)
+
+
   def testPass(self):
     reader = StringIO.StringIO('if x:\n  pass\n')
     log = []
