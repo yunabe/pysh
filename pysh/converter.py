@@ -17,9 +17,42 @@ class RoughLexer(object):
   def __init__(self, reader):
     self.reader = reader
     self.c = None
+    # Used for indent prediction.
+    self.__indent_stack = []
 
   def is_space(self, c):
     return c == ' ' or c == '\t' or c == '\f' or c == '\v'
+
+  def __indent_width(self, indent):
+    return sum(map(lambda c: 1 if c == ' ' else 8, indent))
+
+  def __push_indent(self, indent):
+    width = self.__indent_width(indent)
+    while self.__indent_stack and self.__indent_stack[-1][1] >= width:
+      self.__indent_stack.pop()
+    self.__indent_stack.append((indent, width))
+
+  def __pop_indent(self):
+    if self.__indent_stack:
+      self.__indent_stack.pop()
+
+  def __predict_next_indent(self, indent, mode, content):
+    self.__push_indent(indent)
+    if mode == 'python':
+      if content.endswith(':'):
+        self.__push_indent(indent + ' ' * 4)
+      elif (content.startswith('pass') or
+            content.startswith('return')):
+        self.__pop_indent()
+
+    if self.__indent_stack:
+      prediction = self.__indent_stack[-1][0]
+    else:
+      prediction = ''
+    self._predict_indent(prediction)
+
+  def _predict_indent(self, indent):
+    pass
 
   def read(self):
     self.c = self.reader.read(1)
@@ -94,9 +127,9 @@ class RoughLexer(object):
     if self.c is None:
       self.c = self.reader.read(1)
 
-    indent = StringIO.StringIO()
+    indent_writer = StringIO.StringIO()
     while self.is_space(self.c):
-      indent.write(self.c)
+      indent_writer.write(self.c)
       self.read()
 
     mode = 'python'
@@ -133,7 +166,9 @@ class RoughLexer(object):
     if self.c == '' and not content_value:
       return None, None, None
     else:
-      return indent.getvalue(), mode, content_value
+      indent = indent_writer.getvalue()
+      self.__predict_next_indent(indent, mode, content_value)
+      return indent, mode, content_value
 
 
 class Converter(object):

@@ -78,6 +78,63 @@ class RoughLexerTest(unittest.TestCase):
     self.assertEquals((None, None, None), lexer.next())
 
 
+class RecordPredictionLexer(RoughLexer):
+  def __init__(self, reader, log):
+    RoughLexer.__init__(self, reader)
+    self.__log = log
+
+  def _predict_indent(self, indent):
+    self.__log.append(indent)
+
+
+class IndentPredictionTest(unittest.TestCase):
+  def testNoIndent(self):
+    reader = StringIO.StringIO('print 3 + 4\n  print 4 + 5')
+    log = []
+    lexer = RecordPredictionLexer(reader, log)
+    lexer.next()
+    lexer.next()
+    self.assertEquals(['', '  '], log)
+
+  def testIfStmt(self):
+    reader = StringIO.StringIO('if x:\n')
+    log = []
+    lexer = RecordPredictionLexer(reader, log)
+    lexer.next()
+    self.assertEquals([' ' * 4], log)
+
+  def testIfStmtWithIndent(self):
+    reader = StringIO.StringIO('  if x:\n')
+    log = []
+    lexer = RecordPredictionLexer(reader, log)
+    lexer.next()
+    self.assertEquals([' ' * 6], log)
+
+  def testPass(self):
+    reader = StringIO.StringIO('if x:\n  pass\n')
+    log = []
+    lexer = RecordPredictionLexer(reader, log)
+    lexer.next()
+    lexer.next()
+    self.assertEquals([' ' * 4, ''], log)
+
+  def testPassWithIndent(self):
+    reader = StringIO.StringIO('  if x:\n    pass\n')
+    log = []
+    lexer = RecordPredictionLexer(reader, log)
+    lexer.next()
+    lexer.next()
+    self.assertEquals([' ' * 6, '  '], log)
+
+  def testReturn(self):
+    reader = StringIO.StringIO('if x:\n  return f(x)\n')
+    log = []
+    lexer = RecordPredictionLexer(reader, log)
+    lexer.next()
+    lexer.next()
+    self.assertEquals([' ' * 4, ''], log)
+
+
 class ConverterTest(unittest.TestCase):
   def testExtractResponseNames(self):
     converter = Converter(None, None)
@@ -99,7 +156,6 @@ class ConverterTest(unittest.TestCase):
     names = converter.extractResponseNames(
       '(echo foo -> bar && echo baz => qux) -> piyo')
     self.assertEquals(['bar', 'qux', 'piyo'], names)
-
 
 
 if __name__ == '__main__':
