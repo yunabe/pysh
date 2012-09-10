@@ -272,7 +272,9 @@ class PyPipe(object):
 
 
 class TaskArg(object):
-  def __init__(self, rc, pool, write_done, cond, after_fork, globals, locals):
+  def __init__(self, rc, pool, write_done, cond,
+               after_fork, exec_fail,
+               globals, locals):
     self.rc = rc
     self.pool = pool
     self.all_r = set()
@@ -281,6 +283,7 @@ class TaskArg(object):
     self.write_done = write_done
     self.condition = cond
     self.after_fork = after_fork
+    self.exec_fail = exec_fail
     self.globals = globals
     self.locals = locals
 
@@ -979,6 +982,7 @@ class EvalProcessTask(object):
           str_args.extend(self.convertToCmdArgs(arg))
         os.execvp(str_args[0], str_args)
       except Exception, e:
+        self.__arg.exec_fail(e)
         print >> sys.stderr, e
         sys.stderr.flush()
         os._exit(1)
@@ -990,6 +994,11 @@ class Evaluator(object):
     self.__rc = {}
 
   def __after_folk(self, pid):
+    pass
+
+  def __exec_fail(self, exc):
+    # called when exec failed.
+    # Don't call any non-asynchronous signal safe method here.
     pass
 
   def rc(self):
@@ -1008,6 +1017,7 @@ class Evaluator(object):
     arg = TaskArg(self.__rc, pool,
                   write_done, cond,
                   self.__after_folk,
+                  self.__exec_fail,
                   globals, locals)
     runner = Runner(
       EvalAstTask(arg,
