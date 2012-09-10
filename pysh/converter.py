@@ -218,7 +218,7 @@ class Converter(object):
       self.writer.write(indent)
       if mode == 'python':
         self.writer.write(content)
-      else:
+      elif content:
         names = self.extractResponseNames(content)
         if names:
           self.writer.write(', '.join(names + ['']) + '= ')
