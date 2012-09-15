@@ -26,6 +26,7 @@ Pysh provides the following features
 * You can write built-in command by Python.
   Also, you can send **Python object** through pipe between built-in commands.
 
+See [Features](#features) section for details.
     
 ## Install and run
 
@@ -69,7 +70,7 @@ This is useful when you write a *oneliner* in interactive shell like bash and zs
     
 This is useful when you define a shell function (e.g. in .bashrc) with pysh.
 
-# Features
+# <a name="features">Features</a>
 ## Variable
 In pysh, you can use python variable from shell scripts.
 
