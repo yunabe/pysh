@@ -3,20 +3,31 @@
 Write shell scripts in Python
 
 ## Basic
-In pysh, You can write shell scripts as normal Python script.
+In pysh, lines that starts with `>` are executed as shell command.
+Other lines are evaluated as normal Python script.
 
-    if not name:
-        name = 'world'
-    print 'Hello %!' % name
+    for i in xrange(100):
+       index = "%02d" % i
+       > mv from$index.txt to$index.txt
 
-When you want to use useful features in shell script like
-command execution, pipe, redirection,
+For example, this pysh script moves from00.txt, from01.txt, …, from99.txt to
+to00.txt, to01.txt, …, to99.txt.
 
-    if not name:
-        name = 'world'
-    > echo "Hello $name!"
+Pysh provides the following features
+
+* You can use Python to write shell script!
+* Execute lines with `>` prefix as shell command.
+* You can use Python variables and expressions in shell command.
+* Most of useful shell features like pipe, redirection,
+  &&, || and \`cmd\` are supported in pysh.
+* You can implement flexible filter and conversion by using
+  map and filter commands with Python lambda expression.
+  You don't need to learn grep, awk and sed any longer.
+* You can write built-in command by Python.
+  Also, you can send **Python object** through pipe between built-in commands.
+
     
-## Install
+## Install and run
 
     git checkout https://github.com/yunabe/pysh.git
     ./pysh/bin/pysh
@@ -45,6 +56,8 @@ Run hello.sh
     import sys
     > echo ${str(sys.argv[1:])}
     EOF
+
+This is useful when you write a *oneliner* in interactive shell like bash and zsh.
 
 ### Run scripts from command line args
 
