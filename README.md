@@ -16,7 +16,7 @@ to00.txt, to01.txt, …, to99.txt.
 Pysh provides the following features
 
 * You can use Python to write shell script!
-* Execute lines with `>` prefix as shell command.
+* Lines with `>` prefix are executed as shell command.
 * You can use Python variables and expressions in shell command.
 * Most of useful shell features like pipe, redirection,
   &&, || and \`cmd\` are supported in pysh.
