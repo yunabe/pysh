@@ -175,3 +175,8 @@ The output is stored to Python variable as list
 You can use backquote to use results of commands as command arguments.
 
     > echo `expr 3 + 4`  # 7
+    
+## Python builtin command
+You can write builtin commands in Python.
+See [builtin.py](https://github.com/yunabe/pysh/blob/master/pysh/shell/builtin.py)
+for details.
