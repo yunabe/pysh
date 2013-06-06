@@ -157,7 +157,7 @@ def pycmd_pyls(args, input, options):
 
 
 @pycmd(name='where')
-def pycmd_pls(args, input, options):
+def pycmd_where(args, input, options):
   assert len(args) == 2
   row = list(input)[0]
   table = row.table()
@@ -165,7 +165,7 @@ def pycmd_pls(args, input, options):
 
 
 @pycmd(name='orderby')
-def pycmd_pls(args, input, options):
+def pycmd_orderby(args, input, options):
   assert len(args) == 2 or len(args) == 3
   row = list(input)[0]
   table = row.table()
