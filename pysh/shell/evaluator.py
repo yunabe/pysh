@@ -36,21 +36,18 @@ from pysh.shell.pycmd import get_pycmd
 from pysh.shell.pycmd import IOType
 from pysh.shell.pycmd import PyCmdOption
 from pysh.shell.tokenizer import Tokenizer
-from pysh.shell.task_manager import Runner
-
-
-class IdentityTask(object):
-  def __init__(self, response):
-    self.__response = response
-
-  def start(self, cont):
-    cont.done(self.__response)
+from pysh.shell.task_manager import Runner, IdentityTask
 
 
 PYVAR_PATTERN = re.compile(r'^[_a-zA-Z][_a-zA-Z0-9]*$')
 
 
 class NativeToPy(object):
+  """A class that converts python outputs from child ast to native output.
+
+  TODO(yunabe): Rename this class because it's confusing.
+  """
+
   def __init__(self, ast, input, output):
     self.ast = ast
     # Remove self.input. We don't use this any longer.
@@ -216,6 +213,8 @@ class VarDict(dict):
 
 
 class PipeFd(object):
+  """A class which represents stdin and stdout in a specific AST context."""
+
   def __init__(self, parent, stdin, stdout):
     self.stdin = None
     self.stdout = None
@@ -226,9 +225,12 @@ class PipeFd(object):
       self.stdin = stdin
     if stdout is not None:
       self.stdout = stdout
+    # TODO(yunabe): self.stdin and stdout can not be None?
 
 
 class PyPipe(object):
+  """A object that pipes iterators give by add_generator to __iter__."""
+
   def __init__(self, reader_type):
     self.__reader_type = reader_type
     self.__generators = collections.deque()
@@ -272,6 +274,8 @@ class PyPipe(object):
 
 
 class TaskArg(object):
+  """A class which is used to share resources amoung tasks."""
+
   def __init__(self, rc, pool, write_done, cond,
                after_fork, exec_fail,
                globals, locals):
@@ -329,6 +333,8 @@ class TaskArg(object):
       self.all_r.remove(fd)
 
 class EvalAstTask(object):
+  """An entry point of tasks for evaluation of AST of shell command."""
+  
   def __init__(self, arg, pipefd, ast):
     self.__arg = arg
     self.__pipefd = pipefd
@@ -370,6 +376,8 @@ class EvalAstTask(object):
 
 
 class WriteThread(threading.Thread):
+  """A thread to write python data to file stream."""
+  
   def __init__(self, input, output):
     threading.Thread.__init__(self)
     self.__input = input
@@ -382,6 +390,11 @@ class WriteThread(threading.Thread):
 
 
 class WritePyCmdRedirectThread(threading.Thread):
+  """A thread to write python data to file stream.
+
+  TODO(yunabe): Integrate this to WriteThread.
+  """
+
   def __init__(self, input, out):
     threading.Thread.__init__(self)
     self.__input = input
@@ -394,6 +407,8 @@ class WritePyCmdRedirectThread(threading.Thread):
 
 
 class WritePyCmdRedirectPyOutThread(threading.Thread):
+  """A thread to write python data to python list (redirect to python)."""
+  
   def __init__(self, input, output):
     threading.Thread.__init__(self)
     self.__input = input
@@ -405,6 +420,8 @@ class WritePyCmdRedirectPyOutThread(threading.Thread):
 
 
 class WriteToPyOutThread(threading.Thread):
+  """A thread to write file stream to python list (redirect to python)."""
+
   def __init__(self, input, output):
     threading.Thread.__init__(self)
     self.__input = input
@@ -420,6 +437,10 @@ global_wait_thread_lock = threading.Lock()
 
 
 class WaitChildThread(threading.Thread):
+  """A thread which catches termination of child processes.
+
+  It calls callbacks registered by other threads via register_callback."""
+  
   def __init__(self):
     threading.Thread.__init__(self)
     # setDaemon so that Python can exit if the thread is running.
@@ -430,10 +451,9 @@ class WaitChildThread(threading.Thread):
     self.__cond = threading.Condition()
 
   def register_callback(self, pid, callback):
-    '''Register callback for the end of process.
+    """Register callback for the end of process.
 
-    Please note that this method is called by other threads.
-    '''
+    Please note that this method is called by other threads."""
     self.__cond.acquire()
     unhandled_rc = None
     if pid in self.__unhandled:
@@ -478,6 +498,8 @@ class WaitChildThread(threading.Thread):
 
 
 class NativeToPyTask(object):
+  """A task which writes output of the child ATF (ast) to pipefd.stdout."""
+  
   def __init__(self, arg, pipefd, ast):
     self.__arg = arg
     self.__pipefd = pipefd
