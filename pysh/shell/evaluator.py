@@ -45,12 +45,8 @@ PYVAR_PATTERN = re.compile(r'^[_a-zA-Z][_a-zA-Z0-9]*$')
 class ProxyPyOutToNative(object):
   """A class that represents convversion from python outputs of child ast
   to native output."""
-
-  def __init__(self, ast, input, output):
+  def __init__(self, ast):
     self.ast = ast
-    # Remove self.input. We don't use this any longer.
-    self.input = input
-    self.output = output
 
 
 def GetArg0Name(tok, vardict):
@@ -113,12 +109,10 @@ def IsFileTypeIO(iotype):
 
 def DiagnoseIOType(ast, vardict):
   ast = DiagnoseIOTypeInternal(ast, vardict)
-  if IsFileTypeIO(ast.inType) and IsFileTypeIO(ast.outType):
-    # should be tested in evaluator_test.py
+  if IsFileTypeIO(ast.outType):
     return ast
   else:
-    return ProxyPyOutToNative(
-      ast, not IsFileTypeIO(ast.inType), not IsFileTypeIO(ast.outType))
+    return ProxyPyOutToNative(ast)
 
 
 # Maybe, we don't need outType.
@@ -141,13 +135,9 @@ def DiagnoseIOTypeInternal(ast, vardict):
         raise Exception('Can not pipe combination of python outputs and '
                         'file outputs to commands that read python data.')
       if not IsFileTypeIO(ast.left.outType) and IsFileTypeIO(ast.right.inType):
-        ast.left = ProxyPyOutToNative(ast.left, False, True)
+        ast.left = ProxyPyOutToNative(ast.left)
         ast.left.inType = ast.inType
         ast.left.outType = 'ST'
-      if IsFileTypeIO(ast.left.outType) and not IsFileTypeIO(ast.right.inType):
-        ast.right = ProxyPyOutToNative(ast.right, True, False)
-        ast.right.inType = 'ST'
-        ast.right.outType = ast.outType
     else:
       inMerged = MergeIOType(ast.left.inType, ast.right.inType)
       outMerged = MergeIOType(ast.left.outType, ast.right.outType)
@@ -156,24 +146,11 @@ def DiagnoseIOTypeInternal(ast, vardict):
                         'cmd that reads file stream.')
       ast.inType = inMerged
       ast.outType = outMerged
-      left_in_wrap = False
-      right_in_wrap = False
-      if IsFileTypeIO(ast.inType):
-        if not IsFileTypeIO(ast.left.inType):
-          left_in_wrap = True
-        if not IsFileTypeIO(ast.right.inType):
-          right_in_wrap = True
-      left_out_wrap = False
-      right_out_wrap = False
       if IsFileTypeIO(ast.outType):
         if not IsFileTypeIO(ast.left.outType):
-          left_out_wrap = True
+          ast.left = ProxyPyOutToNative(ast.left)
         if not IsFileTypeIO(ast.right.outType):
-          right_out_wrap = True
-      if left_in_wrap or left_out_wrap:
-        ast.left = ProxyPyOutToNative(ast.left, left_in_wrap, left_out_wrap)
-      if right_in_wrap or right_out_wrap:
-        ast.right = ProxyPyOutToNative(ast.right, right_in_wrap, right_out_wrap)
+          ast.right = ProxyPyOutToNative(ast.right)
 
     return ast
 
@@ -191,12 +168,12 @@ def DiagnoseProcessIOType(proc, vardict):
                         'cmd that reads file stream.')
       proc.inType = merged_intype
       if ast.outType == 'PY':
-        arg[i] = (tok, ProxyPyOutToNative(ast, False, True))
+        arg[i] = (tok, ProxyPyOutToNative(ast))
       else:
         arg[i] = (tok, ast)
-  if is_pycmd and (proc.inType == 'ST' or proc.outType == 'ST'):
+  if is_pycmd and proc.outType == 'ST':
     original_proc = proc
-    proc = ProxyPyOutToNative(proc, proc.inType == 'ST', proc.outType == 'ST')
+    proc = ProxyPyOutToNative(proc)
     proc.inType = original_proc.inType
     proc.outType = original_proc.outType
   return proc
@@ -361,7 +338,7 @@ class EvalAstTask(object):
       raise Exception('Unexpected ast: ', ast)
 
   def invokePipeTask(self, cont, left, right):
-    assert IsFileTypeIO(left.outType) == IsFileTypeIO(right.inType)
+    assert (IsFileTypeIO(left.outType) or not IsFileTypeIO(right.inType))
     if not IsFileTypeIO(left.outType):
       cont.call(PipePyToPyTask(self.__arg, self.__pipefd, left, right), 'wait')
     else:
@@ -507,12 +484,11 @@ class ProxyPyOutToNativeTask(object):
 
   def start(self, cont):
     new_w = None
-    if self.__ast.output:
-      new_w = PyPipe('ST')
-      self.__write_th = WriteThread(new_w,
-                                    self.__arg.tofile(self.__pipefd.stdout))
-      self.__write_th.start()
-      self.__new_w = new_w
+    new_w = PyPipe('ST')
+    self.__write_th = WriteThread(new_w,
+                                  self.__arg.tofile(self.__pipefd.stdout))
+    self.__write_th.start()
+    self.__new_w = new_w
     cont.call(EvalAstTask(
         self.__arg,
         PipeFd(self.__pipefd, None, new_w),
