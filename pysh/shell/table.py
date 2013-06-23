@@ -12,35 +12,52 @@ class VarDict(object):
         except KeyError:
             return self.__locals[key]
 
-class Table(object):
-    def __init__(self, cols):
+
+def CreateTableFromIterableRows(rows):
+    it = iter(rows)
+    try:
+        row0 = it.next()
+    except StopIteration:
+        return PyshTable((), ())
+    table = row0.table()
+    def values_generator():
+        yield row0.values()
+        while True:
+            row = it.next()
+            assert row.table() is table
+            yield row.values()
+
+    return PyshTable(table.columns, values_generator())
+
+
+class PyshTable(object):
+    def __init__(self, cols, values_generator):
+        assert isinstance(cols, tuple)
         self.__cols = cols
-        self.__rows = []
+        self.__generator = values_generator
         self.__col_index = {}
         for i, col in enumerate(cols):
             self.__col_index[col] = i
 
-    def cols(self):
-        return self.__cols
-
-    def __iter__(self):
-        return self.__rows.__iter__()
-
-    def add_row(self, values):
-        row = Row(self, values)
-        self.__rows.append(row)
-        return row
-
     def col_index(self, col):
         return self.__col_index[col]
 
+    def __iter__(self):
+        return self.rows.__iter__()
+
+    @property
+    def columns(self):
+        return self.__cols
+
+    @property
     def rows(self):
-        return self.__rows
+        return (Row(self, values) for values in self.__generator)
 
     def pretty_print(self, writer, sep=' |'):
         # key -> len(key)
         max_width = dict(zip(self.__cols, map(len, self.__cols)))
-        for row in self.__rows:
+        rows = list(self.rows)
+        for row in rows:
             for col in self.__cols:
                 value = row[col]
                 max_width[col] = max(max_width[col], len(str(value)))
@@ -52,7 +69,7 @@ class Table(object):
         writer.write('-' * reduce(lambda x, y: x + y + len(sep),
                                   max_width.values()))
         writer.write('\n')
-        for row in self.__rows:
+        for row in rows:
             for i, col in enumerate(self.__cols):
                 if i != 0:
                     writer.write(sep)
@@ -60,25 +77,26 @@ class Table(object):
             writer.write('\n')
 
     def where(self, cond, globals=None, locals=None):
-        new = Table(self.__cols)
-        for row in self.__rows:
+        return PyshTable(
+            self.__cols,
+            self.__where_generator(cond, self.rows, globals, locals))
+
+    def __where_generator(self, cond, rows, globals, locals):
+        for row in rows:
             if eval(cond, globals, VarDict(locals, row)):
-                new.add_row(row.values())
-        return new
+                yield row.values()
 
     def orderby(self, order, asc=True, globals=None, locals=None):
         orders = []
-        for i, row in enumerate(self.__rows):
+        rows = list(self.rows)
+        for i, row in enumerate(rows):
             orders.append((eval(order, globals, VarDict(locals, row)), i))
         if asc:
             comparator = cmp
         else:
             comparator = lambda x, y: cmp(y, x)
         orders.sort(comparator)
-        new = Table(self.__cols)
-        for _, i in orders:
-            new.add_row(self.__rows[i].values())
-        return new
+        return PyshTable(self.__cols, (rows[i].values() for _, i in orders))
 
 
 class Row(object):

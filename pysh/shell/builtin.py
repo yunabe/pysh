@@ -12,7 +12,9 @@ import sys
 from pysh.shell.pycmd import register_pycmd
 from pysh.shell.pycmd import pycmd
 from pysh.shell.pycmd import IOType
-from pysh.shell.table import Table
+from pysh.shell.table import PyshTable, CreateTableFromIterableRows
+
+# TODO(yunabe): Writes tests for all commands.
 
 def file_to_array(f):
   return map(lambda line: line.rstrip('\r\n'), f.readlines())
@@ -94,7 +96,7 @@ def pycmd_reduce(args, input, options):
   return [reduce(f, input)]
 
 
-def pyls_add_row(path, stats, fulltime, table):
+def create_pyls_row(path, stats, fulltime):
   file_type = '?'
   if stat.S_ISDIR(stats.st_mode):
     file_type = 'd'
@@ -121,8 +123,8 @@ def pyls_add_row(path, stats, fulltime, table):
     st_atime = int(st_atime)
   mtime = datetime.datetime.fromtimestamp(st_mtime)
   atime = datetime.datetime.fromtimestamp(st_atime)
-  table.add_row([file_type, Permission(permission),
-                 user, group, mtime, atime, path])
+  return (file_type, Permission(permission),
+          user, group, mtime, atime, path)
 
 
 pyls_option_parser = OptionParser()
@@ -141,34 +143,35 @@ def pycmd_pyls(args, input, options):
   args = args[1:]
   if not args:
     args = [os.getcwd()]
-  table = Table(['type', 'mode', 'user', 'group', 'mtime', 'atime', 'path'])
-  for arg in args:
-    stats = os.lstat(arg)
-    if stat.S_ISDIR(stats.st_mode) and not opt.dir:
-      names = os.listdir(arg)
-      names = filter(lambda name: not name.startswith('.'), names)
-      for name in names:
-        joined = os.path.join(arg, name)
-        stats = os.lstat(joined)
-        pyls_add_row(joined, stats, opt.fulltime, table)
-    else:
-      pyls_add_row(arg, stats, opt.fulltime, table)
-  return table
+
+  def generator():
+    for arg in args:
+      stats = os.lstat(arg)
+      if stat.S_ISDIR(stats.st_mode) and not opt.dir:
+        names = os.listdir(arg)
+        names = filter(lambda name: not name.startswith('.'), names)
+        for name in names:
+          joined = os.path.join(arg, name)
+          stats = os.lstat(joined)
+          yield create_pyls_row(joined, stats, opt.fulltime)
+        else:
+          yield create_pyls_row(arg, stats, opt.fulltime)
+
+  return PyshTable(('type', 'mode', 'user', 'group', 'mtime', 'atime', 'path'),
+                   generator())
 
 
 @pycmd(name='where')
 def pycmd_where(args, input, options):
   assert len(args) == 2
-  row = list(input)[0]
-  table = row.table()
+  table = CreateTableFromIterableRows(input)
   return table.where(args[1], options.globals(), options.locals())
 
 
 @pycmd(name='orderby')
 def pycmd_orderby(args, input, options):
   assert len(args) == 2 or len(args) == 3
-  row = list(input)[0]
-  table = row.table()
+  table = CreateTableFromIterableRows(input)
   asc = True
   if len(args) == 3:
     args2 = args[2].lower()
@@ -181,11 +184,10 @@ def pycmd_orderby(args, input, options):
 
 @pycmd(name='tocsv')
 def pycmd_tocsv(args, input, options):
-  row = list(input)[0]
-  table = row.table()
+  table = CreateTableFromIterableRows(input)
   io = StringIO.StringIO()
   w = csv.writer(io)
-  w.writerow(table.cols())
+  w.writerow(table.columns)
   for row in table:
     w.writerow(row.values())
   return io.getvalue().split('\r\n')[:-1]
@@ -195,12 +197,13 @@ def pycmd_tocsv(args, input, options):
 def pycmd_fromcsv(args, input, options):
   reader = csv.reader(input)
   table = None
-  for row in reader:
-    if not table:
-      table = Table(row)
-    else:
-      table.add_row(row)
-  return table
+  it = iter(reader)
+  try:
+    row0 = it.next()
+  except StopIteration:
+    return None
+
+  return PyshTable(tuple(row0), it)
 
 
 @pycmd(name='cd', inType=IOType.No, outType=IOType.No)
