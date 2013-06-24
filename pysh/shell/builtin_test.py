@@ -4,6 +4,7 @@ import shutil
 import unittest
 
 import pysh.shell.builtin
+from pysh.shell.table import PyshTable
 from pysh.shell.evaluator import run
 
 
@@ -84,6 +85,21 @@ class BuiltinTest(unittest.TestCase):
   def testChangeDirHome(self):
     rc = run('cd', globals(), locals())
     self.assertEquals(os.environ['HOME'], os.getcwd())
+
+  def testWhere(self):
+    table = PyshTable(('a', 'b'),
+                      ((i, i * i % 10) for i in xrange(10)))
+    rc = run('echo $table | where "a == 3" => out', globals(), locals())
+    self.assertEquals(1, len(rc['out']))
+    self.assertEquals((3, 9), (rc['out'][0].a, rc['out'][0].b))
+
+  def testOrderby(self):
+    table = PyshTable(('a', 'b'),
+                      ((i, i * i % 10) for i in xrange(10)))
+    rc = run('echo $table | orderby b desc => out', globals(), locals())
+    self.assertEquals(10, len(rc['out']))
+    self.assertEquals(9, rc['out'][0].b)
+
 
 if __name__ == '__main__':
   unittest.main()
