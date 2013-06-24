@@ -42,11 +42,9 @@ from pysh.shell.task_manager import Runner, IdentityTask
 PYVAR_PATTERN = re.compile(r'^[_a-zA-Z][_a-zA-Z0-9]*$')
 
 
-class NativeToPy(object):
-  """A class that converts python outputs from child ast to native output.
-
-  TODO(yunabe): Rename this class because it's confusing.
-  """
+class ProxyPyOutToNative(object):
+  """A class that represents convversion from python outputs of child ast
+  to native output."""
 
   def __init__(self, ast, input, output):
     self.ast = ast
@@ -119,7 +117,7 @@ def DiagnoseIOType(ast, vardict):
     # should be tested in evaluator_test.py
     return ast
   else:
-    return NativeToPy(
+    return ProxyPyOutToNative(
       ast, not IsFileTypeIO(ast.inType), not IsFileTypeIO(ast.outType))
 
 
@@ -143,11 +141,11 @@ def DiagnoseIOTypeInternal(ast, vardict):
         raise Exception('Can not pipe combination of python outputs and '
                         'file outputs to commands that read python data.')
       if not IsFileTypeIO(ast.left.outType) and IsFileTypeIO(ast.right.inType):
-        ast.left = NativeToPy(ast.left, False, True)
+        ast.left = ProxyPyOutToNative(ast.left, False, True)
         ast.left.inType = ast.inType
         ast.left.outType = 'ST'
       if IsFileTypeIO(ast.left.outType) and not IsFileTypeIO(ast.right.inType):
-        ast.right = NativeToPy(ast.right, True, False)
+        ast.right = ProxyPyOutToNative(ast.right, True, False)
         ast.right.inType = 'ST'
         ast.right.outType = ast.outType
     else:
@@ -173,9 +171,9 @@ def DiagnoseIOTypeInternal(ast, vardict):
         if not IsFileTypeIO(ast.right.outType):
           right_out_wrap = True
       if left_in_wrap or left_out_wrap:
-        ast.left = NativeToPy(ast.left, left_in_wrap, left_out_wrap)
+        ast.left = ProxyPyOutToNative(ast.left, left_in_wrap, left_out_wrap)
       if right_in_wrap or right_out_wrap:
-        ast.right = NativeToPy(ast.right, right_in_wrap, right_out_wrap)
+        ast.right = ProxyPyOutToNative(ast.right, right_in_wrap, right_out_wrap)
 
     return ast
 
@@ -193,12 +191,12 @@ def DiagnoseProcessIOType(proc, vardict):
                         'cmd that reads file stream.')
       proc.inType = merged_intype
       if ast.outType == 'PY':
-        arg[i] = (tok, NativeToPy(ast, False, True))
+        arg[i] = (tok, ProxyPyOutToNative(ast, False, True))
       else:
         arg[i] = (tok, ast)
   if is_pycmd and (proc.inType == 'ST' or proc.outType == 'ST'):
     original_proc = proc
-    proc = NativeToPy(proc, proc.inType == 'ST', proc.outType == 'ST')
+    proc = ProxyPyOutToNative(proc, proc.inType == 'ST', proc.outType == 'ST')
     proc.inType = original_proc.inType
     proc.outType = original_proc.outType
   return proc
@@ -357,8 +355,8 @@ class EvalAstTask(object):
     elif isinstance(ast, Assign):
       cont.call(AssignTask(
           self.__arg, self.__pipefd, ast.cmd, ast.name), 'wait')
-    elif isinstance(ast, NativeToPy):
-      cont.call(NativeToPyTask(self.__arg, self.__pipefd, ast), 'wait')
+    elif isinstance(ast, ProxyPyOutToNative):
+      cont.call(ProxyPyOutToNativeTask(self.__arg, self.__pipefd, ast), 'wait')
     else:
       raise Exception('Unexpected ast: ', ast)
 
@@ -497,7 +495,7 @@ class WaitChildThread(threading.Thread):
         callback(rc)
 
 
-class NativeToPyTask(object):
+class ProxyPyOutToNativeTask(object):
   """A task which writes output of the child ATF (ast) to pipefd.stdout."""
   
   def __init__(self, arg, pipefd, ast):
