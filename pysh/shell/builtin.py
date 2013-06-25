@@ -161,6 +161,13 @@ def pycmd_pyls(args, input, options):
                    generator())
 
 
+@pycmd(name='select')
+def pycmd_where(args, input, options):
+  assert len(args) == 2
+  table = CreateTableFromIterableRows(input)
+  return table.select(args[1], options.globals(), options.locals())
+
+
 @pycmd(name='where')
 def pycmd_where(args, input, options):
   assert len(args) == 2

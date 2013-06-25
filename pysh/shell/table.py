@@ -1,3 +1,5 @@
+import StringIO
+import tokenize
 
 class VarDict(object):
     def __init__(self, locals, row):
@@ -98,6 +100,18 @@ class PyshTable(object):
         orders.sort(comparator)
         return PyshTable(self.__cols, (rows[i].values() for _, i in orders))
 
+    def select(self, expr, globals=None, locals=None):
+        parser = SelectExprParser(expr)
+        entries = parser.parse()
+        cols = tuple((e[1] if e[1] else e[0] for e in entries))
+        def generator():
+            for row in self.rows:
+                values = []
+                for entry, _ in entries:
+                    values.append(eval(entry, globals, VarDict(locals, row)))
+                yield values
+        return PyshTable(cols, generator())
+
 
 class Row(object):
     def __init__(self, table, values):
@@ -119,3 +133,58 @@ class Row(object):
     def __setattribute__(self, key, value):
         self.__values[self.__table.col_index(key)] = value
 
+
+class SelectExprParser(object):
+    """A parser to separate select expr.
+
+    parse returns a list of pairs of (expr, as).
+    """
+    
+    def __init__(self, expr):
+        self.__expr = expr
+
+    def parse(self):
+        entries = self.separate_by_commma(self.__expr)
+        return [self.extract_as(entry) for entry in entries]
+
+    def separate_by_commma(self, expr):
+        tokens = tokenize.generate_tokens(
+            StringIO.StringIO(expr).readline)
+        results = []
+        level = 0
+        current = []
+        for token in tokens:
+            if token[1] == '(' or token[1] == '[' or token[1] == '{':
+                level += 1
+            elif token[1] == ')' or token[1] == ']' or token[1] == '}':
+                level -= 1
+            elif (level == 0 and token[1] == ',' or
+                  token[0] == tokenize.ENDMARKER):
+                results.append(current)
+                current = []
+                continue
+            current.append(token)
+        return results
+
+    def extract_as(self, entry):
+        if (entry[-1][0] == tokenize.STRING and
+            len(entry) > 1 and entry[-2][0] == tokenize.NAME and
+            entry[-2][1] == 'as'):
+            return self.tokens_to_str(entry[:-2]), eval(entry[-1][1])
+        if (entry[-1][0] == tokenize.NAME and
+            len(entry) > 1 and entry[-2][0] == tokenize.NAME and
+            entry[-2][1] == 'as'):
+            return self.tokens_to_str(entry[:-2]), entry[-1][1]
+        return self.tokens_to_str(entry), None
+    
+    def tokens_to_str(self, tokens):
+        prev_end = None
+        out = StringIO.StringIO()
+        for token in tokens:
+            if token[0] == tokenize.ENDMARKER:
+                continue
+            if prev_end and prev_end != token[2]:
+                out.write(' ')
+            out.write(token[1])
+            prev_end = token[3]
+        return out.getvalue()
