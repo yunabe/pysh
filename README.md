@@ -30,7 +30,7 @@ See [Features](#features) section for details.
     
 ## Install and run
 
-    git checkout https://github.com/yunabe/pysh.git
+    git clone https://github.com/yunabe/pysh.git
     ./pysh/bin/pysh
 
 ## pysh command
