@@ -1,4 +1,4 @@
-#pysh
+# pysh
 
 Write shell scripts in Python
 
@@ -15,7 +15,7 @@ to00.txt, to01.txt, …, to99.txt.
 
 Pysh provides the following features
 
-* You can use Python to write shell script!
+* You can use Python to write shell scripts!
 * Lines with `>` prefix are executed as shell command.
 * You can use Python variables and expressions in shell command.
 * Most of useful shell features like pipe, redirection,
